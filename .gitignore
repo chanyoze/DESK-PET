@@ -12,3 +12,6 @@ characters/*
 
 # Spine 런타임 — 라이선스상 재배포하지 않는다 (npm run fetch-spine 으로 받는다)
 vendor/
+
+# 페이지 빌드 시 복사되는 생성물
+site/character.js

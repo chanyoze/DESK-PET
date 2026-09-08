@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DeskPet — 바탕화면 데스크톱 마스코트</title>
+<meta name="description" content="작업 표시줄을 걸어다니고, 앉고, 자고, 가끔 말을 거는 데스크톱 마스코트. Windows용, 설치 불필요." />
+<meta property="og:title" content="DeskPet" />
+<meta property="og:description" content="바탕화면을 돌아다니는 데스크톱 마스코트. 설치 불필요." />
+<style>
+  :root {
+    --bg: #0f1218;
+    --bg2: #161b24;
+    --card: #1a2029;
+    --line: #262e3a;
+    --fg: #e7ecf5;
+    --dim: #9aa6bb;
+    --accent: #7fb0ff;
+    --accent2: #9dbcff;
+    --ok: #7fd1a0;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font: 16px/1.7 'Pretendard', 'Malgun Gothic', -apple-system, 'Segoe UI', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent); }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 0 22px; }
+
+  /* ── 히어로 ── */
+  header {
+    position: relative;
+    padding: 72px 0 0;
+    background: radial-gradient(1100px 420px at 50% -8%, #1e2838 0%, var(--bg) 62%);
+    border-bottom: 1px solid var(--line);
+    overflow: hidden;
+  }
+  h1 {
+    margin: 0;
+    font-size: clamp(38px, 7vw, 62px);
+    letter-spacing: -0.02em;
+    font-weight: 800;
+  }
+  .tag { margin: 14px 0 0; font-size: clamp(15px, 2.4vw, 19px); color: var(--dim); max-width: 34em; }
+
+  .cta { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin: 30px 0 0; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 9px;
+    padding: 13px 24px; border-radius: 11px;
+    background: linear-gradient(180deg, #7fb0ff, #5c93ee);
+    color: #0b1020; font-weight: 700; text-decoration: none;
+    box-shadow: 0 8px 26px rgba(92, 147, 238, 0.32);
+  }
+  .btn:hover { filter: brightness(1.07); }
+  .btn.ghost {
+    background: transparent; color: var(--fg);
+    border: 1px solid var(--line); box-shadow: none;
+  }
+  .meta { color: var(--dim); font-size: 13.5px; margin: 12px 0 0; }
+
+  /* ── 데모 무대 ── */
+  .stage-wrap { margin: 34px 0 0; }
+  .stage {
+    position: relative; height: 210px;
+    background: linear-gradient(180deg, transparent, rgba(127, 176, 255, 0.05));
+    border-radius: 14px 14px 0 0;
+    border: 1px solid var(--line); border-bottom: 0;
+    overflow: hidden;
+  }
+  .stage canvas { position: absolute; bottom: 26px; left: 0; }
+  .taskbar {
+    height: 26px; background: var(--bg2);
+    border-top: 1px solid var(--line);
+    position: absolute; bottom: 0; left: 0; right: 0;
+    display: flex; align-items: center; padding: 0 12px;
+    color: #5a6579; font-size: 11.5px; letter-spacing: .04em;
+  }
+  .demo-bubble {
+    position: absolute; padding: 8px 13px; border-radius: 12px;
+    background: rgba(255,255,255,.96); color: #1a1f2e;
+    font-size: 13px; box-shadow: 0 6px 20px rgba(0,0,0,.35);
+    border: 1.5px solid rgba(40,50,80,.18);
+    transform: translate(-50%, 0); white-space: nowrap;
+    opacity: 0; transition: opacity .2s;
+  }
+  .demo-note { color: var(--dim); font-size: 12.5px; text-align: center; margin: 10px 0 0; }
+
+  /* ── 섹션 ── */
+  section { padding: 62px 0; border-bottom: 1px solid var(--line); }
+  h2 { margin: 0 0 8px; font-size: 25px; letter-spacing: -0.01em; }
+  .lead { color: var(--dim); margin: 0 0 26px; }
+
+  .grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 13px; padding: 20px; }
+  .card h3 { margin: 0 0 6px; font-size: 16px; }
+  .card p { margin: 0; color: var(--dim); font-size: 14.5px; line-height: 1.65; }
+  .emoji { font-size: 22px; display: block; margin-bottom: 10px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  td { padding: 11px 4px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr:last-child td { border-bottom: 0; }
+  td:first-child { width: 42%; color: var(--fg); font-weight: 600; white-space: nowrap; }
+  td:last-child { color: var(--dim); }
+
+  pre {
+    background: #0b0e14; border: 1px solid var(--line); border-radius: 11px;
+    padding: 15px 17px; overflow-x: auto; font-size: 13px; line-height: 1.6;
+    color: #cfe0ff;
+  }
+  code { font-family: 'Cascadia Code', Consolas, monospace; }
+  p code, li code { background: #0b0e14; padding: 2px 6px; border-radius: 5px; font-size: 13px; }
+
+  .warn {
+    background: rgba(214, 158, 46, .09); border: 1px solid rgba(214, 158, 46, .3);
+    border-radius: 11px; padding: 15px 18px; color: #e3cd9a; font-size: 14.5px;
+  }
+  .warn strong { color: #f2dfb0; }
+
+  footer { padding: 40px 0 64px; color: var(--dim); font-size: 13.5px; }
+  footer a { color: var(--dim); }
+
+  ol { padding-left: 20px; color: var(--dim); }
+  ol li { margin-bottom: 9px; }
+  ol strong { color: var(--fg); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <h1>DeskPet</h1>
+    <p class="tag">
+      바탕화면을 돌아다니는 데스크톱 마스코트.
+      작업 표시줄을 걸어다니고, 앉고, 자고, 가끔 말을 겁니다.
+    </p>
+
+    <div class="cta">
+      <a class="btn" id="dl" href="https://github.com/chanyoze/DESK-PET/releases/latest">
+        ⬇ 다운로드 (Windows)
+      </a>
+      <a class="btn ghost" href="https://github.com/chanyoze/DESK-PET">GitHub</a>
+    </div>
+    <p class="meta">설치 필요 없음 · exe 하나 · Windows 10/11 64비트</p>
+
+    <div class="stage-wrap">
+      <div class="stage" id="stage">
+        <canvas id="demo"></canvas>
+        <div class="demo-bubble" id="bubble"></div>
+        <div class="taskbar">작업 표시줄</div>
+      </div>
+      <p class="demo-note">↑ 실제로 앱에서 쓰는 캐릭터입니다. 클릭해 보세요.</p>
+    </div>
+  </div>
+</header>
+
+<section>
+  <div class="wrap">
+    <h2>뭘 하나요</h2>
+    <p class="lead">가만히 두면 알아서 돌아다닙니다.</p>
+    <div class="grid">
+      <div class="card">
+        <span class="emoji">🚶</span>
+        <h3>돌아다닙니다</h3>
+        <p>작업 표시줄 위를 걷고, 앉고, 가끔 잠듭니다. 창을 가리지 않게 클릭은 그대로 통과합니다.</p>
+      </div>
+      <div class="card">
+        <span class="emoji">💬</span>
+        <h3>말을 겁니다</h3>
+        <p>시간대와 상황에 맞춰 혼잣말을 합니다. 아침엔 인사하고, 밤늦으면 자라고 잔소리합니다.</p>
+      </div>
+      <div class="card">
+        <span class="emoji">🔔</span>
+        <h3>알려줍니다</h3>
+        <p>빌드가 끝났거나 알림이 오면 말풍선으로 전달합니다. 리마인더도 걸 수 있습니다.</p>
+      </div>
+      <div class="card">
+        <span class="emoji">🎯</span>
+        <h3>던질 수 있습니다</h3>
+        <p>드래그해서 집어 던지면 속도가 실려 날아가고, 바닥에서 통통 튑니다.</p>
+      </div>
+      <div class="card">
+        <span class="emoji">🎨</span>
+        <h3>캐릭터를 바꿉니다</h3>
+        <p>Spine 2D 스켈레톤을 넣으면 원하는 캐릭터로 교체됩니다. 크기도 조절됩니다.</p>
+      </div>
+      <div class="card">
+        <span class="emoji">🪶</span>
+        <h3>가볍습니다</h3>
+        <p>설치도 관리자 권한도 필요 없습니다. 끄고 싶으면 메뉴에서 종료 한 번.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>조작</h2>
+    <p class="lead">전부 캐릭터를 클릭하는 데서 시작합니다.</p>
+    <table>
+      <tr><td>캐릭터 좌클릭</td><td>메뉴 — 캐릭터 · 크기 · 쓰다듬기 · 리마인더 · 종료</td></tr>
+      <tr><td>캐릭터 드래그</td><td>집어서 던지기</td></tr>
+      <tr><td>말풍선 클릭</td><td>넘기기</td></tr>
+      <tr><td>트레이 아이콘 우클릭</td><td>같은 메뉴</td></tr>
+    </table>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>설치</h2>
+    <ol>
+      <li><strong>Releases에서 <code>DeskPet-x.y.z.exe</code> 다운로드</strong></li>
+      <li><strong>더블클릭.</strong> 설치 과정이 없습니다</li>
+      <li>SmartScreen 경고가 뜨면 <strong>추가 정보 → 실행</strong>
+        <br><span style="font-size:13.5px">코드 서명 인증서가 없어서 뜨는 경고입니다. 개인이 만든 앱이라 서명이 없습니다.</span>
+      </li>
+    </ol>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>캐릭터 추가하기</h2>
+    <p class="lead">
+      기본 캐릭터가 하나 들어 있습니다. Spine 2D 스켈레톤이 있으면 원하는 캐릭터를 넣을 수 있습니다.
+    </p>
+
+    <pre><code>%APPDATA%\deskpet\characters\내캐릭터\
+    character.json
+    foo.skel
+    foo.atlas
+    foo.png</code></pre>
+
+    <p style="color:var(--dim); font-size:14.5px"><code>character.json</code> 은 이렇게 씁니다.</p>
+    <pre><code>{
+  "name": "표시할 이름",
+  "renderer": "spine",
+  "skeleton": "foo.skel",
+  "atlas": "foo.atlas",
+  "height": 250,
+  "animations": {
+    "idle": "Relax", "walk": "Move", "sit": "Sit",
+    "sleep": "Sleep", "pet": "Interact"
+  }
+}</code></pre>
+
+    <p style="color:var(--dim); font-size:14.5px">
+      Spine 런타임도 한 번 받아서 아래 경로에 두면 됩니다. <strong style="color:var(--fg)">3.8 브랜치여야 합니다.</strong>
+    </p>
+    <pre><code>%APPDATA%\deskpet\vendor\spine\spine-webgl.js
+
+https://raw.githubusercontent.com/EsotericSoftware/spine-runtimes/3.8/spine-ts/build/spine-webgl.js</code></pre>
+
+    <div class="warn">
+      <strong>캐릭터 에셋은 각자 준비합니다.</strong>
+      이 앱에는 자체 제작 캐릭터만 들어 있습니다. 게임이나 다른 작품의 에셋은
+      포함되어 있지 않고, 앞으로도 포함하지 않습니다.
+      개인적으로 사용하는 것과 배포하는 것은 다른 문제입니다.
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>알림 보내기</h2>
+    <p class="lead">
+      앱은 <code>127.0.0.1:45678</code> 에만 열리는 작은 서버를 띄웁니다.
+      빌드 스크립트든 뭐든 캐릭터에게 말을 시킬 수 있습니다.
+    </p>
+    <pre><code>curl -X POST http://127.0.0.1:45678/say ^
+  -H "Content-Type: application/json; charset=utf-8" ^
+  -d "{\"text\":\"빌드 끝났어\",\"mood\":\"happy\"}"</code></pre>
+    <p style="color:var(--dim); font-size:14.5px">
+      <code>mood</code> 는 <code>normal</code> / <code>happy</code> / <code>alert</code> 이고,
+      말풍선 색과 캐릭터 반응이 달라집니다.
+    </p>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <p>
+      MIT 라이선스 (코드) ·
+      <a href="https://github.com/chanyoze/DESK-PET">소스</a> ·
+      <a href="https://github.com/chanyoze/DESK-PET/issues">문제 신고</a>
+    </p>
+    <p style="margin-top:6px">
+      Spine 런타임은 Esoteric Software의 라이선스를 따르며 앱에 포함되지 않습니다.
+    </p>
+  </div>
+</footer>
+
+<script src="character.js"></script>
+<script>
+// ── 페이지 데모 ────────────────────────────────────────────────
+// 앱과 같은 파츠 리그(character.js)를 그대로 써서, 캐릭터가 실제로 걷는 걸 보여준다.
+(function () {
+  var M = window.Character.METRICS;
+  var canvas = document.getElementById('demo');
+  var ctx = canvas.getContext('2d');
+  var stage = document.getElementById('stage');
+  var bubbleEl = document.getElementById('bubble');
+
+  var SCALE = 2.0;
+  var GROUND = 0;                 // 캔버스 바닥 기준
+  var W = 0, H = (M.height + M.padTop + M.padBottom) * SCALE;
+
+  function resize() {
+    W = stage.clientWidth;
+    var dpr = (window.devicePixelRatio || 1) * 2;   // 슈퍼샘플링
+    canvas.width = Math.round(W * dpr);
+    canvas.height = Math.round(H * dpr);
+    canvas.style.width = W + 'px';
+    canvas.style.height = H + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    GROUND = H - 6;
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  var S = { x: 90, dir: 1, facing: 1, state: 'walk', t: 0, until: 3 };
+  var LINES = ['안녕!', '뭐 보고 있어?', '받아서 써봐', '심심한데', '커피 한 잔 어때'];
+
+  function setState(name, dur) {
+    if (S.state !== name) { S.state = name; S.t = 0; }
+    S.until = dur;
+  }
+  function pickNext() {
+    var r = Math.random();
+    if (r < 0.62) { S.dir = Math.random() < 0.5 ? -1 : 1; setState('walk', 2.5 + Math.random() * 3); }
+    else if (r < 0.85) setState('idle', 1.5 + Math.random() * 2);
+    else setState('sit', 2 + Math.random() * 3);
+  }
+
+  function speak(text, ms) {
+    bubbleEl.textContent = text;
+    bubbleEl.style.opacity = '1';
+    clearTimeout(speak._t);
+    speak._t = setTimeout(function () { bubbleEl.style.opacity = '0'; }, ms || 2600);
+  }
+
+  stage.addEventListener('click', function () {
+    setState('pet', 1.6);
+    speak(LINES[Math.floor(Math.random() * LINES.length)]);
+  });
+
+  // 가끔 알아서 한마디
+  setInterval(function () {
+    if (Math.random() < 0.35 && bubbleEl.style.opacity !== '1') {
+      speak(LINES[Math.floor(Math.random() * LINES.length)]);
+    }
+  }, 7000);
+
+  var last = performance.now();
+  function frame(now) {
+    var dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+    S.t += dt;
+    S.until -= dt;
+
+    if (S.state === 'walk') {
+      S.x += S.dir * 52 * dt;
+      S.facing = S.dir;
+      var pad = 46;
+      if (S.x < pad) { S.x = pad; S.dir = 1; }
+      if (S.x > W - pad) { S.x = W - pad; S.dir = -1; }
+    }
+    if (S.until <= 0) { if (S.state === 'pet') setState('idle', 1.4); else pickNext(); }
+
+    ctx.clearRect(0, 0, W, H);
+    ctx.save();
+    ctx.translate(S.x, GROUND);
+    ctx.scale(SCALE, SCALE);
+    // 발밑 그림자
+    ctx.save();
+    ctx.globalAlpha = 0.22;
+    ctx.fillStyle = '#000';
+    ctx.beginPath();
+    ctx.ellipse(0, 1.5, 15, 3.8, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    window.Character.draw(ctx, S.state, S.t, S.facing);
+    ctx.restore();
+
+    // 말풍선을 캐릭터 머리 위에
+    bubbleEl.style.left = S.x + 'px';
+    bubbleEl.style.bottom = (26 + H - GROUND + M.height * SCALE + 10) + 'px';
+
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
