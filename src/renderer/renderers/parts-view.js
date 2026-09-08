@@ -58,6 +58,11 @@
       return this.animations.indexOf(name) >= 0 ? name : null;
     }
 
+    /** 이 스켈레톤이 해당 동작을 실제로 가지고 있나 */
+    has(name) {
+      return !!this.resolve(name);
+    }
+
     play(animName) {
       const resolved = this.resolve(animName) || 'idle';
       if (resolved === this._current) return;

@@ -83,7 +83,9 @@ Canvas가 아니라 **WebGL** 백엔드를 쓴다. spine-ts의 Canvas 백엔드�
 - **벽 타기** — 매니페스트에 `climbChance` 를 주면 켜진다 (기본 꺼짐)
 - 행동 상태머신: `idle` / `walk` / `sit` / `sleep` / `climb` / `drag` / `fall` / `pet`
 - **드래그해서 던지기** — 속도가 실려서 날아가고, 바닥에서 통통 튀고, 벽에서 반사
-- **클릭하면 다음 캐릭터로 교체** — 창을 새로 띄우지 않고 서 있던 자리에서 바뀐다
+- **클릭하면 메뉴** — 캐릭터 교체 · 크기 · 쓰다듬기 · 리마인더가 여기 모여 있다
+- **말풍선** — 외부 알림과 리마인더를 캐릭터가 말한다
+- 설정(캐릭터 · 크기 · 리마인더)이 재시작 후에도 유지된다
 - 자면 `zzz` 가 떠오름
 - 트레이 메뉴: 캐릭터 / 크기 / 가운데로 불러오기 / 깨우기 / 다음 오퍼레이터 / 종료
 - 해상도·작업 표시줄 변경 시 바닥선 자동 재계산
@@ -163,6 +165,68 @@ ik: { armFront: { x: 12, y: -44, bend: -1 } }   // "손을 여기에 놓아라"
 `forward: true` 덕분에 클릭은 통과시키면서 `mousemove`는 계속 받을 수 있고,
 렌더러가 매 이동마다 히트 테스트를 해서 캐릭터 위일 때만 IPC로
 `setIgnoreMouseEvents(false)`를 요청한다. 캐릭터를 벗어나면 즉시 되돌린다.
+
+## 외부에서 말 시키기
+
+앱은 `127.0.0.1:45678` 에만 바인딩된 작은 HTTP 서버를 연다. 빌드 스크립트든
+에디터 훅이든, 뭐든 캐릭터에게 말을 시킬 수 있다.
+
+```bash
+npm run say -- "빌드 끝났어" happy
+npm run say -- "테스트 실패" alert 8000
+
+curl -X POST http://127.0.0.1:45678/say \
+  -H "Content-Type: application/json; charset=utf-8" \
+  -d '{"text":"배포 완료","mood":"happy"}'
+```
+
+`mood` 는 `normal` / `happy` / `alert` 이고 말풍선 색과 캐릭터 반응 동작이 달라진다.
+앱이 꺼져 있으면 `tools/say.js` 는 **조용히 무시한다** — 훅에서 불려도 실패하지 않는다.
+
+### Claude Code 완료 알림
+
+`~/.claude/settings.json` 에 훅을 걸면 클로드가 작업을 마칠 때 캐릭터가 알려준다.
+
+```json
+{
+  "hooks": {
+    "Stop": [
+      { "hooks": [{ "type": "command",
+        "command": "node \"C:/study/deskpet/tools/say.js\" \"작업 끝났어! 확인해봐\" happy" }] }
+    ],
+    "Notification": [
+      { "hooks": [{ "type": "command",
+        "command": "node \"C:/study/deskpet/tools/say.js\" \"뭔가 물어보고 있어\" alert" }] }
+    ]
+  }
+}
+```
+
+## 애니메이션 활용
+
+게임에서 뽑은 기지 SD는 동작이 **6개**뿐이다(스킨은 `Special` 이 붙어 7개).
+없는 동작을 억지로 만들면 어색해지므로, 있는 것을 최대한 돌려 쓴다.
+
+| 동작 | 쓰이는 곳 |
+|---|---|
+| `Relax` | 대기 |
+| `Default` | 대기(둘째 종류) · 던져질 때 · 낙하 |
+| `Move` | 걷기 |
+| `Sit` | 앉기 |
+| `Sleep` | 잠 (드물게, 깨면 쿨다운) |
+| `Interact` | 쓰다듬기 · 캐릭터 교체 인사 · 알림 반응 |
+| `Special` | 스킨 한정. 가끔 랜덤 + `mood=happy` 알림 |
+
+새 동작이 필요한 기능(벽 타기 등)은 게임 에셋으로는 어색해진다. 자체 파츠 리그는
+IK로 만들어낼 수 있으므로 그쪽에서만 켠다.
+
+## 설정
+
+`app.getPath('userData')/settings.json` 에 저장된다.
+
+```json
+{ "character": "mudrock", "sizeScale": 1, "reminders": [], "notifyPort": 45678 }
+```
 
 ## 개발용 옵션
 

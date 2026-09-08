@@ -216,6 +216,11 @@
       );
     }
 
+    /** 이 스켈레톤이 해당 동작을 실제로 가지고 있나 */
+    has(name) {
+      return !!this.resolve(name);
+    }
+
     play(animName, loop) {
       const resolved = this.resolve(animName);
       if (!resolved || resolved === this._current) return;

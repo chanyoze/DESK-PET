@@ -8,7 +8,9 @@
     "dev": "electron . --dev",
     "icon": "node tools/gen-icon.js",
     "fetch-spine": "node tools/fetch-spine.js",
-    "kaltsit": "electron . --character=kaltsit"
+    "kaltsit": "electron . --character=kaltsit",
+    "say": "node tools/say.js",
+    "check-pma": "node tools/check-pma.js"
   },
   "author": "이찬호",
   "license": "MIT",

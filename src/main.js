@@ -1,13 +1,15 @@
 const { app, BrowserWindow, screen, ipcMain, Tray, Menu, nativeImage } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const settings = require('./settings');
+const notify = require('./notify-server');
 
 const DEV = process.argv.includes('--dev');
 const CHAR_DIR = path.join(__dirname, '..', 'characters');
 
-/** --character=이름 으로 지정, 없으면 default */
+/** --character=이름 으로 지정, 없으면 저장된 설정 → 설치된 첫 캐릭터 */
 const argChar = (process.argv.find((a) => a.startsWith('--character=')) || '').split('=')[1];
-let currentCharacter = argChar || null;   // null 이면 설치된 첫 캐릭터
+let currentCharacter = argChar || null;
 
 function listCharacters() {
   try {
@@ -26,19 +28,19 @@ function listCharacters() {
  * 캐릭터 하나를 통째로 읽어서 렌더러로 보낸다.
  * file:// XHR 은 Chromium이 막으므로 파일을 직접 실어 보낸다 (프로토콜 등록 불필요).
  */
-/** 트레이에서 고르는 크기 배율 */
-let sizeScale = 1;
+/** 크기 배율 (설정에 저장된다) */
 const SIZES = [
   { label: '작게', value: 0.6 },
   { label: '보통', value: 1 },
   { label: '크게', value: 1.45 },
 ];
+const sizeScale = () => settings.load().sizeScale || 1;
 
 function loadCharacter(id) {
   const dir = path.join(CHAR_DIR, id);
   const manifest = JSON.parse(fs.readFileSync(path.join(dir, 'character.json'), 'utf8'));
   const out = { id, ...manifest, files: {} };
-  out.height = Math.round((manifest.height || 150) * sizeScale);
+  out.height = Math.round((manifest.height || 150) * sizeScale());
 
   if (manifest.renderer === 'spine') {
     const atlasText = fs.readFileSync(path.join(dir, manifest.atlas), 'utf8');
@@ -174,6 +176,7 @@ function createTray() {
         checked: c.id === currentCharacter,
         click: () => {
           currentCharacter = c.id;
+          settings.save({ character: c.id });
           win?.reload();      // 렌더러가 부팅하며 새 캐릭터를 불러온다
         },
       })),
@@ -183,9 +186,9 @@ function createTray() {
       submenu: SIZES.map((s) => ({
         label: s.label,
         type: 'radio',
-        checked: s.value === sizeScale,
+        checked: s.value === sizeScale(),
         click: () => {
-          sizeScale = s.value;
+          settings.save({ sizeScale: s.value });
           win?.reload();
         },
       })),
@@ -201,13 +204,61 @@ function createTray() {
   ]));
 }
 
+/**
+ * 리마인더 스케줄러.
+ * 20초마다 훑어서 시간이 된 것을 말풍선으로 띄운다.
+ * at 이 "HH:MM" 이면 매일, 숫자면 그 시각(epoch ms)에 한 번.
+ */
+function startReminderLoop() {
+  const fired = new Set();       // 오늘 이미 울린 매일 리마인더
+  let lastDay = new Date().getDate();
+
+  setInterval(() => {
+    const now = new Date();
+    if (now.getDate() !== lastDay) {   // 날짜가 바뀌면 매일 항목 초기화
+      fired.clear();
+      lastDay = now.getDate();
+    }
+
+    const cfg = settings.load();
+    const list = cfg.reminders || [];
+    let changed = false;
+
+    for (const r of list) {
+      if (typeof r.at === 'string') {
+        const [h, m] = r.at.split(':').map(Number);
+        const key = r.id + '@' + now.toDateString();
+        if (now.getHours() === h && now.getMinutes() === m && !fired.has(key)) {
+          fired.add(key);
+          win?.webContents.send('pet:say', { text: r.text, mood: 'alert' });
+        }
+      } else if (!r.done && Date.now() >= r.at) {
+        r.done = true;
+        changed = true;
+        win?.webContents.send('pet:say', { text: r.text, mood: 'alert' });
+      }
+    }
+    if (changed) settings.save({ reminders: list.filter((r) => !r.done) });
+  }, 20000);
+}
+
 // 두 번 실행 방지
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.whenReady().then(() => {
+    const cfg = settings.load();
+    if (!currentCharacter) currentCharacter = cfg.character || null;
+
     createWindow();
     createTray();
+
+    // 외부에서 말을 시킬 수 있는 로컬 서버 (Claude Code 훅, 빌드 스크립트 등)
+    notify.start(cfg.notifyPort, (msg) => {
+      win?.webContents.send('pet:say', msg);
+    });
+
+    startReminderLoop();
 
     // 해상도/작업표시줄이 바뀌면 창 크기와 바닥선을 다시 맞춘다
     const resync = () => {
@@ -223,6 +274,32 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 ipcMain.handle('stage:get', () => getStage());
+
+// ── 설정 · 리마인더 ─────────────────────────────────────────
+ipcMain.handle('settings:get', () => {
+  const cfg = settings.load();
+  return { ...cfg, currentCharacter, sizes: SIZES, settingsPath: settings.FILE() };
+});
+ipcMain.handle('settings:setSize', (_e, value) => {
+  settings.save({ sizeScale: value });
+  win?.reload();
+});
+ipcMain.handle('settings:setCharacter', (_e, id) => {
+  currentCharacter = id;
+  settings.save({ character: id });
+});
+ipcMain.handle('reminders:add', (_e, r) => {
+  const list = settings.load().reminders || [];
+  list.push({ id: 'r' + Date.now().toString(36), text: r.text, at: r.at });
+  settings.save({ reminders: list });
+  return list;
+});
+ipcMain.handle('reminders:remove', (_e, id) => {
+  const list = (settings.load().reminders || []).filter((r) => r.id !== id);
+  settings.save({ reminders: list });
+  return list;
+});
+ipcMain.on('app:quit', () => app.quit());
 ipcMain.handle('character:list', () => listCharacters());
 ipcMain.handle('character:load', (_e, id) => {
   const list = listCharacters();

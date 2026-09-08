@@ -45,11 +45,28 @@
   const rand = (a, b) => a + Math.random() * (b - a);
   const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 
-  /** 우리 상태 이름 → 캐릭터가 가진 애니메이션 이름 */
+  /**
+   * 우리 상태 이름 → 캐릭터가 가진 애니메이션 이름.
+   * 매니페스트에 없으면 명일방주 기지 SD의 표준 이름으로 떨어진다.
+   */
+  const DEFAULT_ANIM = {
+    idle: 'Relax',
+    idle2: 'Default',
+    walk: 'Move',
+    sit: 'Sit',
+    sleep: 'Sleep',
+    pet: 'Interact',
+    special: 'Special',
+    drag: 'Default',
+    fall: 'Default',
+    climb: 'Move',
+  };
   function animFor(state) {
     const map = (character && character.animations) || {};
-    return map[state] || state;
+    return map[state] || DEFAULT_ANIM[state] || state;
   }
+
+  const STILL = ['idle', 'idle2', 'sit', 'sleep', 'pet', 'special'];
 
   function setState(name, dur) {
     if (S.state !== name) {
@@ -57,13 +74,17 @@
       if (view) view.play(animFor(name));
     }
     S.until = dur == null ? 0 : dur;
-    if (name === 'idle' || name === 'sit' || name === 'sleep' || name === 'pet') S.vx = 0;
+    if (STILL.indexOf(name) >= 0) S.vx = 0;
   }
 
   /**
    * 다음에 뭘 할지 고른다.
    * 전에는 앉기→자기가 45%였고 자고 일어나면 바로 다시 앉아서, 사실상
    * 앉기↔자기를 반복했다. 잠은 드물게, 깨어난 뒤에는 한동안 안 자게 한다.
+   *
+   * 게임 스켈레톤은 동작이 6~7개뿐이라 있는 걸 최대한 돌려 쓴다:
+   *   Relax=idle  Default=idle2  Move=walk  Sit=sit  Sleep=sleep
+   *   Interact=pet  Special=special(스킨 한정)
    */
   let sleepCooldown = 0;
   function pickNext() {
@@ -77,15 +98,20 @@
     if (S.state === 'sit' && sleepCooldown <= 0 && r < 0.15) {
       return setState('sleep', rand(6, 12));
     }
+    // 가끔 특별 동작 (가진 캐릭터만)
+    if (r < 0.05 && view && view.has(animFor('special'))) {
+      return setState('special', rand(2.5, 4));
+    }
     if (r < 0.58) {                            // 걷기를 기본 행동으로
       S.dir = Math.random() < 0.5 ? -1 : 1;
       return setState('walk', rand(3, 7));
     }
-    if (r < 0.85) return setState('idle', rand(1.5, 3.5));
+    // 서 있는 동작이 둘(Relax / Default)이라 번갈아 쓴다
+    if (r < 0.85) return setState(Math.random() < 0.5 ? 'idle' : 'idle2', rand(1.5, 3.5));
     return setState('sit', rand(2.5, 6));
   }
 
-  const RESTING = ['idle', 'walk', 'sit', 'sleep', 'pet'];
+  const RESTING = ['idle', 'idle2', 'walk', 'sit', 'sleep', 'pet', 'special'];
 
   /** 캐릭터 폭의 절반 (충돌·히트박스용) */
   function halfWidth() {
@@ -181,6 +207,96 @@
     view.el.style.transform =
       'translate3d(' + (S.x - view.originX).toFixed(1) + 'px,' +
       (S.y - view.originY).toFixed(1) + 'px,0)';
+    // 말풍선은 캐릭터를 따라다닌다
+    if (bubble) bubble.place(S.x, S.y - (character.height || BASE_H), stage);
+  }
+
+  // ── 말풍선 · 메뉴 ───────────────────────────────────────────
+  let bubble = null;
+  let menu = null;
+
+  /** 외부 알림 / 리마인더 → 캐릭터가 말하고 반응한다 */
+  function say(msg) {
+    if (!bubble) return;
+    bubble.say(msg);
+    if (!view) return;
+    // 기분에 맞는 동작으로 반응 (있는 것만)
+    const wanted = msg.mood === 'happy' && view.has(animFor('special')) ? 'special' : 'pet';
+    if (S.state !== 'drag' && S.state !== 'fall') setState(wanted, 2.2);
+  }
+
+  function buildMenu() {
+    const cur = character && character.id;
+    const sections = [];
+
+    sections.push({
+      title: '캐릭터',
+      items: roster.map((c) => ({ label: c.name, value: 'char:' + c.id, checked: c.id === cur })),
+    });
+
+    sections.push({
+      title: '크기',
+      items: [
+        { label: '작게', value: 'size:0.6' },
+        { label: '보통', value: 'size:1' },
+        { label: '크게', value: 'size:1.45' },
+      ],
+    });
+
+    const acts = [{ label: '쓰다듬기', value: 'act:pet' }];
+    if (view && view.has(animFor('special'))) acts.push({ label: '특별 동작', value: 'act:special' });
+    acts.push({ label: '가운데로 부르기', value: 'act:recall' });
+    sections.push({ title: '동작', items: acts });
+
+    sections.push({
+      title: '리마인더',
+      items: [
+        { label: '5분 뒤 알림', value: 'remind:5' },
+        { label: '25분 뒤 알림 (포모도로)', value: 'remind:25' },
+        { label: '60분 뒤 알림', value: 'remind:60' },
+      ],
+    });
+
+    if (reminders.length) {
+      sections.push({
+        title: '예약됨 (눌러서 취소)',
+        items: reminders.map((r) => ({
+          label: '✕ ' + r.text,
+          value: 'unremind:' + r.id,
+          danger: true,
+        })),
+      });
+    }
+
+    sections.push({ items: [{ label: '종료', value: 'act:quit', danger: true }] });
+    menu.build(sections);
+  }
+
+  async function onMenuAction(value) {
+    const [kind, arg] = [value.slice(0, value.indexOf(':')), value.slice(value.indexOf(':') + 1)];
+    if (kind === 'char') {
+      await switchTo(arg);
+      window.petAPI.setCharacter(arg);
+    } else if (kind === 'size') {
+      window.petAPI.setSize(parseFloat(arg));   // 메인이 창을 새로고침한다
+    } else if (kind === 'remind') {
+      const min = parseInt(arg, 10);
+      const text = min + '분 지났어. 쉬는 게 어때?';
+      reminders = await window.petAPI.addReminder({ text, at: Date.now() + min * 60000 });
+      say({ text: min + '분 뒤에 알려줄게', mood: 'happy', ms: 2500 });
+    } else if (kind === 'unremind') {
+      reminders = await window.petAPI.removeReminder(arg);
+      say({ text: '알림 취소했어', ms: 2000 });
+    } else if (kind === 'act') {
+      if (arg === 'pet') setState('pet', 2.2);
+      else if (arg === 'special') setState('special', 3);
+      else if (arg === 'recall') {
+        S.x = (stage.workLeft + stage.workRight) / 2;
+        S.y = stage.ground - 300;
+        S.vx = 0; S.vy = 0;
+        setState('fall');
+      } else if (arg === 'quit') window.petAPI.quit();
+    }
   }
 
   // ── 마우스 ──────────────────────────────────────────────────
@@ -188,8 +304,17 @@
   let drag = null;
   const cursor = { x: -1, y: -1 };
 
+  const inRect = (r, px, py) =>
+    !!r && px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
+
+  /**
+   * 커서가 마우스를 받아야 할 영역 위에 있는지.
+   * 캐릭터 본체 + 떠 있는 말풍선/메뉴를 모두 포함해야 클릭이 통과되지 않는다.
+   */
   function hitTest(px, py) {
     if (!view || !character) return false;
+    if (menu && inRect(menu.rect, px, py)) return true;
+    if (bubble && inRect(bubble.rect, px, py)) return true;
     const halfW = halfWidth() * 1.15;
     const h = character.height || BASE_H;
     return px >= S.x - halfW && px <= S.x + halfW && py >= S.y - h * 1.05 && py <= S.y + 12;
@@ -226,6 +351,13 @@
 
   window.addEventListener('mousedown', (e) => {
     if (e.button !== 0 || !hitTest(e.clientX, e.clientY)) return;
+    // 메뉴·말풍선 위 클릭은 UI가 처리한다 (드래그 시작하지 않는다)
+    if (menu && inRect(menu.rect, e.clientX, e.clientY)) return;
+    if (bubble && inRect(bubble.rect, e.clientX, e.clientY)) {
+      bubble.dismiss();
+      return;
+    }
+    if (menu && menu.open) menu.close();
     e.preventDefault();
     const now = performance.now();
     drag = { ox: S.x - e.clientX, oy: S.y - e.clientY, t0: now, lt: now, lx: e.clientX, ly: e.clientY, moved: 0 };
@@ -241,8 +373,11 @@
     const tapped = drag.moved < 7 && held < 400;
     drag = null;
     if (tapped) {
+      // 짧게 클릭하면 메뉴를 연다 (캐릭터 교체·크기·리마인더가 여기 모여 있다)
       S.vx = 0; S.vy = 0;
-      switchNext();              // 클릭하면 다음 오퍼레이터로 교체
+      buildMenu();
+      menu.show(S.x, S.y - (character.height || BASE_H) * 0.55, stage);
+      syncInteractive(true);
     } else {
       S.vx = clamp(S.vx, -THROW_MAX, THROW_MAX);
       S.vy = clamp(S.vy, -THROW_MAX, THROW_MAX);
@@ -288,6 +423,7 @@
 
   // ── 캐릭터 교체 ─────────────────────────────────────────────
   let roster = [];        // 설치된 캐릭터 목록
+  let reminders = [];     // 예약된 리마인더
   let switching = false;
   let spineLoaded = false;
 
@@ -312,17 +448,21 @@
   }
 
   /**
-   * 다음 오퍼레이터로 교체한다. 위치와 상태는 그대로 두고 뷰만 갈아끼운다.
-   * 창을 새로 띄우지 않으므로 캐릭터가 서 있던 자리에서 바뀐다.
+   * 지정한(또는 다음) 오퍼레이터로 교체한다.
+   * 위치와 상태는 그대로 두고 뷰만 갈아끼우므로 서 있던 자리에서 바뀐다.
    */
-  async function switchNext() {
-    if (switching || roster.length < 2) return;
+  async function switchTo(id) {
+    if (switching || !roster.length) return;
     switching = true;
     const from = character && character.name;
     try {
-      const i = roster.findIndex((c) => c.id === (character && character.id));
-      const next = roster[(i + 1 + roster.length) % roster.length];
-      const loaded = await window.petAPI.loadCharacter(next.id);
+      let targetId = id;
+      if (!targetId) {
+        const i = roster.findIndex((c) => c.id === (character && character.id));
+        targetId = roster[(i + 1 + roster.length) % roster.length].id;
+      }
+      if (targetId === (character && character.id)) return;
+      const loaded = await window.petAPI.loadCharacter(targetId);
       const nv = await makeView(loaded);
 
       const old = view;
@@ -344,6 +484,12 @@
   }
 
   async function boot() {
+    bubble = new window.PetUI.Bubble();
+    menu = new window.PetUI.PetMenu();
+    menu.onAction = onMenuAction;
+
+    const cfg = await window.petAPI.getSettings();
+    reminders = cfg.reminders || [];
     roster = await window.petAPI.listCharacters();
     character = await window.petAPI.loadCharacter();
     console.log('[pet] 캐릭터:', character.name, '(' + character.renderer + ')');
@@ -360,6 +506,7 @@
     setState('fall');
 
     window.petAPI.onStage(applyStage);
+    window.petAPI.onSay(say);
     window.addEventListener('resize', () => view.resize());
     requestAnimationFrame(frame);
   }
@@ -372,7 +519,7 @@
       S.hold = false;
       setState('fall');
     } else if (cmd === 'next') {
-      switchNext();
+      switchTo();
     } else if (cmd === 'wake') {
       setState('idle', 3);
     } else if (cmd === 'climb' || cmd === 'climbhold') {
