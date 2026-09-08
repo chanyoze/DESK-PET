@@ -13,7 +13,15 @@
   const BASE_H = 141;            // 물리 튜닝의 기준 키(px)
   const THROW_MAX = 2000;
   const BOUNCE = 0.30;
-  const CLIMB_CHANCE = 0.55;
+
+  /**
+   * 벽 타기 확률. 매니페스트의 climbChance 로 켠다 (기본 0 = 꺼짐).
+   *
+   * 게임에서 뽑은 스켈레톤은 등반 애니메이션이 없어서 걷는 자세 그대로 벽을
+   * 올라가 어색하다. 반면 자체 파츠 리그는 IK로 손발을 실제로 짚기 때문에
+   * 제대로 보인다. 그래서 지우지 않고 캐릭터별로 켜고 끈다.
+   */
+  let CLIMB_CHANCE = 0;
 
   let character = null;
   let view = null;
@@ -300,6 +308,7 @@
     GRAVITY = 1980 * PX;
     WALK_SPEED = (character.walkSpeed || 57) * PX;
     CLIMB_SPEED = 121 * PX;
+    CLIMB_CHANCE = character.climbChance || 0;
   }
 
   /**

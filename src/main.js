@@ -194,7 +194,6 @@ function createTray() {
     { label: '가운데로 불러오기', click: () => win?.webContents.send('pet:command', 'recall') },
     { label: '깨우기', click: () => win?.webContents.send('pet:command', 'wake') },
     { label: '다음 오퍼레이터', click: () => win?.webContents.send('pet:command', 'next') },
-    { label: '벽 타기', click: () => win?.webContents.send('pet:command', 'climb') },
     { type: 'separator' },
     { label: '개발자 도구', click: () => win?.webContents.openDevTools({ mode: 'detach' }) },
     { type: 'separator' },
