@@ -1,7 +1,57 @@
 const { app, BrowserWindow, screen, ipcMain, Tray, Menu, nativeImage } = require('electron');
 const path = require('path');
+const fs = require('fs');
 
 const DEV = process.argv.includes('--dev');
+const CHAR_DIR = path.join(__dirname, '..', 'characters');
+
+/** --character=이름 으로 지정, 없으면 default */
+const argChar = (process.argv.find((a) => a.startsWith('--character=')) || '').split('=')[1];
+let currentCharacter = argChar || 'default';
+
+function listCharacters() {
+  try {
+    return fs.readdirSync(CHAR_DIR, { withFileTypes: true })
+      .filter((e) => e.isDirectory() && fs.existsSync(path.join(CHAR_DIR, e.name, 'character.json')))
+      .map((e) => {
+        const m = JSON.parse(fs.readFileSync(path.join(CHAR_DIR, e.name, 'character.json'), 'utf8'));
+        return { id: e.name, name: m.name || e.name, renderer: m.renderer || 'parts' };
+      });
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * 캐릭터 하나를 통째로 읽어서 렌더러로 보낸다.
+ * file:// XHR 은 Chromium이 막으므로 파일을 직접 실어 보낸다 (프로토콜 등록 불필요).
+ */
+function loadCharacter(id) {
+  const dir = path.join(CHAR_DIR, id);
+  const manifest = JSON.parse(fs.readFileSync(path.join(dir, 'character.json'), 'utf8'));
+  const out = { id, ...manifest, files: {} };
+
+  if (manifest.renderer === 'spine') {
+    const atlasText = fs.readFileSync(path.join(dir, manifest.atlas), 'utf8');
+    out.files.atlas = atlasText;
+    out.files.skeleton = fs.readFileSync(path.join(dir, manifest.skeleton)).toString('base64');
+
+    // 아틀라스가 참조하는 png들을 data URL로 (아틀라스 문법: 빈 줄 뒤 파일명)
+    out.files.textures = {};
+    for (const line of atlasText.split(/\r?\n/)) {
+      const t = line.trim();
+      if (/\.(png|jpg|jpeg)$/i.test(t) && !out.files.textures[t]) {
+        const p = path.join(dir, t);
+        if (fs.existsSync(p)) {
+          const ext = path.extname(t).slice(1).toLowerCase();
+          out.files.textures[t] =
+            `data:image/${ext === 'jpg' ? 'jpeg' : ext};base64,` + fs.readFileSync(p).toString('base64');
+        }
+      }
+    }
+  }
+  return out;
+}
 
 /** @type {BrowserWindow|null} */
 let win = null;
@@ -71,6 +121,25 @@ function createWindow() {
 
   if (DEV) win.webContents.openDevTools({ mode: 'detach' });
 
+  // 개발용: 창 내용만 PNG로 저장하고 종료 (--shot=경로[,지연ms])
+  // 화면 캡처와 달리 다른 창에 가려지지 않아 우리가 그린 것만 정확히 보인다.
+  const shot = (process.argv.find((a) => a.startsWith('--shot=')) || '').split('=')[1];
+  if (shot) {
+    const [shotPath, delay] = shot.split(',');
+    win.webContents.once('did-finish-load', () => {
+      setTimeout(async () => {
+        try {
+          const img = await win.webContents.capturePage();
+          fs.writeFileSync(shotPath, img.toPNG());
+          console.log('[shot] 저장됨:', shotPath, img.getSize());
+        } catch (e) {
+          console.error('[shot] 실패:', e.message);
+        }
+        app.quit();
+      }, parseInt(delay || '4000', 10));
+    });
+  }
+
   // 특정 동작을 바로 확인하고 싶을 때: electron . --start=climb
   const start = (process.argv.find((a) => a.startsWith('--start=')) || '').split('=')[1];
   if (start) {
@@ -86,7 +155,21 @@ function createTray() {
   const icon = nativeImage.createFromPath(path.join(__dirname, '..', 'assets', 'tray.png'));
   tray = new Tray(icon);
   tray.setToolTip('DeskPet');
+  const chars = listCharacters();
   tray.setContextMenu(Menu.buildFromTemplate([
+    {
+      label: '캐릭터',
+      submenu: chars.map((c) => ({
+        label: c.name + (c.renderer === 'spine' ? '' : ' (파츠)'),
+        type: 'radio',
+        checked: c.id === currentCharacter,
+        click: () => {
+          currentCharacter = c.id;
+          win?.reload();      // 렌더러가 부팅하며 새 캐릭터를 불러온다
+        },
+      })),
+    },
+    { type: 'separator' },
     { label: '가운데로 불러오기', click: () => win?.webContents.send('pet:command', 'recall') },
     { label: '깨우기', click: () => win?.webContents.send('pet:command', 'wake') },
     { label: '벽 타기', click: () => win?.webContents.send('pet:command', 'climb') },
@@ -119,6 +202,15 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 ipcMain.handle('stage:get', () => getStage());
+ipcMain.handle('character:list', () => listCharacters());
+ipcMain.handle('character:load', (_e, id) => {
+  try {
+    return loadCharacter(id || currentCharacter);
+  } catch (err) {
+    console.error('[main] 캐릭터 로드 실패:', id, err.message);
+    return loadCharacter('default');
+  }
+});
 
 // renderer가 "지금 커서가 캐릭터 위에 있다"고 알려주면 클릭 통과를 잠시 끈다
 ipcMain.on('mouse:interactive', (_e, interactive) => {

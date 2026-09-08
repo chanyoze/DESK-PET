@@ -4,8 +4,11 @@ dist/
 .DS_Store
 
 # 추출한 게임 에셋은 절대 커밋하지 않는다
-characters/
+characters/*
 !characters/default/
 *.skel
 *.atlas
 *.ab
+
+# Spine 런타임 — 라이선스상 재배포하지 않는다 (npm run fetch-spine 으로 받는다)
+vendor/

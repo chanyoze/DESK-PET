@@ -3,20 +3,61 @@
 바탕화면을 돌아다니는 데스크톱 마스코트. Electron 기반, Windows 11 대상.
 
 Steam의 *Little LUMI Model* 같은 데스크톱 컴패니언을 직접 만들어 보는 프로젝트다.
-캐릭터·아트는 전부 자체 제작하며, 다른 작품의 에셋은 쓰지 않는다.
+저장소에는 코드만 있고 캐릭터 에셋은 포함하지 않는다. 자체 제작 파츠 리그로 그리거나,
+각자 준비한 Spine 스켈레톤을 얹는다.
 
 ## 실행
 
 ```bash
 npm install
-npm start        # 실행
+npm start        # 기본(자체 파츠) 캐릭터로 실행
 npm run dev      # 개발자 도구를 띄운 채 실행
 npm run icon     # 트레이 아이콘 PNG 재생성
 ```
 
-종료는 트레이 아이콘 우클릭 → **종료**.
+캐릭터는 트레이 아이콘 우클릭 → **캐릭터** 에서 바꾼다. 종료도 같은 메뉴.
 
-## 지금 되는 것 (v0.1 / Step 1)
+## 캐릭터 — 코드는 공개, 에셋은 각자 (BYOA)
+
+`characters/<이름>/character.json` 하나가 캐릭터 하나다. 렌더러가 두 종류다.
+
+| renderer | 무엇 | 에셋 |
+|---|---|---|
+| `parts` | 자체 파츠 리그 (코드로 그림) | 필요 없음 — 저장소에 포함 |
+| `spine` | Spine 2D 스켈레톤 | `.skel` + `.atlas` + `.png` — **각자 준비** |
+
+```json
+{
+  "name": "이름",
+  "renderer": "spine",
+  "skeleton": "foo.skel",
+  "atlas": "foo.atlas",
+  "height": 150,
+  "walkSpeed": 46,
+  "animations": { "idle": "Relax", "walk": "Move", "sit": "Sit", "sleep": "Sleep" }
+}
+```
+
+`animations`는 이 앱의 상태 이름을 스켈레톤이 실제로 가진 애니메이션 이름에 연결한다.
+없는 상태는 `Default`로 떨어진다.
+
+`characters/` 는 `default/` 만 빼고 전부 gitignore 된다. **남의 저작물은 저장소에 들어오지 않는다.**
+에뮬레이터가 ROM을 포함하지 않는 것과 같은 방식이다.
+
+### Spine 런타임
+
+```bash
+npm run fetch-spine     # vendor/spine/spine-webgl.js 를 받는다
+```
+
+저장소에 넣지 않는 이유는 Spine 런타임 재배포에 라이선스가 필요하기 때문이다.
+**3.8 브랜치**를 받는다 — Spine은 런타임과 에디터의 메이저.마이너가 일치해야 하고,
+4.x 런타임은 3.8 스켈레톤을 로드하지 못한다.
+
+Canvas가 아니라 **WebGL** 백엔드를 쓴다. spine-ts의 Canvas 백엔드는 메시 어태치먼트를
+지원하지 않아서, 옷자락·머리카락에 메시를 쓰는 스켈레톤이 깨진다.
+
+## 지금 되는 것 (v0.3)
 
 - 화면 전체를 덮는 **투명 · 프레임 없는 · 항상 위** 오버레이 창
 - **클릭 통과** — 커서가 캐릭터 위에 있을 때만 마우스를 받고, 나머지는 아래 창으로 통과
@@ -113,7 +154,12 @@ npx electron . --dev                  # 개발자 도구
 npx electron . --trace                # 상태값(위치·속도·상태)을 터미널에 출력
 npx electron . --start=climb          # 실행하자마자 벽 타기
 npx electron . --start=climbhold      # 벽 타기를 제자리에 고정 (자세 확인용)
+npx electron . --character=kaltsit    # 특정 캐릭터로 실행
+npx electron . --shot=out.png,5000    # 창 내용만 PNG로 저장하고 종료
 ```
+
+`--shot` 은 화면 캡처가 아니라 **창 내용만** 찍는다. 다른 창(전체화면 게임 등)에
+가려져도 우리가 그린 것만 정확히 확인할 수 있다.
 
 렌더러 콘솔은 항상 터미널로 넘어온다. 투명 창이라 오류를 눈으로 볼 수 없기 때문이다.
 
@@ -123,4 +169,7 @@ npx electron . --start=climbhold      # 벽 타기를 제자리에 고정 (자�
 
 ## 라이선스
 
-MIT. 캐릭터 디자인과 아트는 자체 제작물이다.
+MIT (코드). 기본 캐릭터의 디자인은 자체 제작물이다.
+
+저장소에 포함되지 않는 것: Spine 런타임(Esoteric Software 라이선스),
+사용자가 직접 준비하는 캐릭터 에셋.

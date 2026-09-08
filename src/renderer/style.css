@@ -11,11 +11,10 @@ body {
   -webkit-user-drag: none;
 }
 
+/* 캔버스는 렌더러가 생성해서 붙인다 */
 #pet {
   position: absolute;
   top: 0;
   left: 0;
   will-change: transform;
-  /* 캐릭터가 커질 때 흐려지지 않도록 */
-  image-rendering: auto;
 }

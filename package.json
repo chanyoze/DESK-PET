@@ -6,7 +6,9 @@
   "scripts": {
     "start": "electron .",
     "dev": "electron . --dev",
-    "icon": "node tools/gen-icon.js"
+    "icon": "node tools/gen-icon.js",
+    "fetch-spine": "node tools/fetch-spine.js",
+    "kaltsit": "electron . --character=kaltsit"
   },
   "author": "이찬호",
   "license": "MIT",
