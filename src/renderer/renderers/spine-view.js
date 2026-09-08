@@ -65,13 +65,21 @@
       this.gl = gl;
       this.isGL2 = typeof WebGL2RenderingContext !== 'undefined' && gl instanceof WebGL2RenderingContext;
 
-      // 텍스처 준비 — 축소 품질을 위해 밉맵을 생성한다
+      // 텍스처 준비 — 축소 품질을 위해 밉맵을 생성한다.
+      //
+      // 게임에서 뽑은 아틀라스는 스트레이트 알파다(투명한 곳에도 흰색이 남아 있다).
+      // 그대로 밉맵을 만들면 그 흰색이 이웃과 평균되어 캐릭터 외곽으로 번진다.
+      // 업로드 시점에 알파를 미리 곱해 두면 밉맵도 블렌딩도 전부 맞아떨어진다.
+      // (tools/check-pma.js 로 어느 쪽인지 확인할 수 있다)
       const useMipMaps = this.isGL2;
+      const premultiplyOnUpload = character.premultipliedSource !== true;
+      if (premultiplyOnUpload) gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
       const textures = {};
       for (const [name, dataUrl] of Object.entries(character.files.textures || {})) {
         const img = await loadImage(dataUrl);
         textures[name] = new spine.webgl.GLTexture(gl, img, useMipMaps);
       }
+      if (premultiplyOnUpload) gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
       const firstTexture = Object.values(textures)[0];
 
       // 아틀라스 — 텍스처를 이름으로 찾아 준다

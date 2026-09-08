@@ -7,7 +7,7 @@ const CHAR_DIR = path.join(__dirname, '..', 'characters');
 
 /** --character=이름 으로 지정, 없으면 default */
 const argChar = (process.argv.find((a) => a.startsWith('--character=')) || '').split('=')[1];
-let currentCharacter = argChar || 'default';
+let currentCharacter = argChar || null;   // null 이면 설치된 첫 캐릭터
 
 function listCharacters() {
   try {
@@ -226,11 +226,15 @@ if (!app.requestSingleInstanceLock()) {
 ipcMain.handle('stage:get', () => getStage());
 ipcMain.handle('character:list', () => listCharacters());
 ipcMain.handle('character:load', (_e, id) => {
+  const list = listCharacters();
+  const want = id || currentCharacter || (list[0] && list[0].id);
   try {
-    return loadCharacter(id || currentCharacter);
+    return loadCharacter(want);
   } catch (err) {
-    console.error('[main] 캐릭터 로드 실패:', id, err.message);
-    return loadCharacter('default');
+    console.error('[main] 캐릭터 로드 실패:', want, err.message);
+    const alt = list.find((c) => c.id !== want);
+    if (alt) return loadCharacter(alt.id);
+    throw err;
   }
 });
 
