@@ -7,7 +7,9 @@
 
 ## 다운로드
 
-**[→ 최신 버전 받기 (Releases)](../../releases/latest)**
+### **[→ chanyoze.github.io/DESK-PET](https://chanyoze.github.io/DESK-PET/)**
+
+또는 [Releases에서 바로 받기](../../releases/latest)
 
 `DeskPet-x.y.z.exe` 하나만 받으면 된다. **설치 필요 없다** — 받아서 그냥 실행.
 
