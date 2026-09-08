@@ -113,9 +113,26 @@
 
   const RESTING = ['idle', 'idle2', 'walk', 'sit', 'sleep', 'pet', 'special'];
 
-  /** 캐릭터 폭의 절반 (충돌·히트박스용) */
+  /**
+   * 캐릭터 폭의 절반 (충돌·클릭 판정용).
+   *
+   * 캔버스 폭에 비례해서 잡으면 안 된다. 캔버스는 스켈레톤 바운즈에서 나오는데
+   * 그 값이 캐릭터마다 극단적으로 다르다 (켈시 823유닛 vs 페넌스 116유닛).
+   * 같은 비율을 쓰면 어떤 캐릭터는 클릭 영역이 절반도 안 된다.
+   * 키는 어느 캐릭터나 비슷한 기준이므로 키에서 뽑고, 캔버스를 넘지 않게 막는다.
+   */
   function halfWidth() {
-    return view ? view.cssW * 0.22 : 44;
+    if (!view) return 44;
+    const h = (character && character.height) || BASE_H;
+    return Math.min(view.cssW / 2, Math.max(h * 0.34, 26));
+  }
+
+  /** 클릭 판정 사각형 — 실제로 그려지는 캔버스 영역을 넘지 않는다 */
+  function hitBox() {
+    const h = (character && character.height) || BASE_H;
+    const halfW = halfWidth() * 1.1;
+    const top = Math.max(S.y - view.originY, S.y - h * 1.2);
+    return { x: S.x - halfW, y: top, w: halfW * 2, h: S.y + 14 - top };
   }
 
   /** 벽에 붙어서 위로 올라간다. x는 벽에 고정, 중력은 끈다. */
@@ -209,11 +226,18 @@
       (S.y - view.originY).toFixed(1) + 'px,0)';
     // 말풍선은 캐릭터를 따라다닌다
     if (bubble) bubble.place(S.x, S.y - (character.height || BASE_H), stage);
+    if (hitboxEl) {
+      const b = hitBox();
+      hitboxEl.style.transform = `translate3d(${b.x}px,${b.y}px,0)`;
+      hitboxEl.style.width = b.w + "px";
+      hitboxEl.style.height = b.h + "px";
+    }
   }
 
   // ── 말풍선 · 메뉴 ───────────────────────────────────────────
   let bubble = null;
   let menu = null;
+  let hitboxEl = null;   // --hitbox 디버그 표시
 
   /** 외부 알림 / 리마인더 → 캐릭터가 말하고 반응한다 */
   function say(msg) {
@@ -315,9 +339,7 @@
     if (!view || !character) return false;
     if (menu && inRect(menu.rect, px, py)) return true;
     if (bubble && inRect(bubble.rect, px, py)) return true;
-    const halfW = halfWidth() * 1.15;
-    const h = character.height || BASE_H;
-    return px >= S.x - halfW && px <= S.x + halfW && py >= S.y - h * 1.05 && py <= S.y + 12;
+    return inRect(hitBox(), px, py);
   }
 
   function syncInteractive(force) {
@@ -484,6 +506,11 @@
   }
 
   async function boot() {
+    if (location.search.indexOf("hitbox") >= 0) {
+      hitboxEl = document.createElement("div");
+      hitboxEl.style.cssText = "position:absolute;top:0;left:0;border:2px solid #ff3b6b;background:rgba(255,59,107,.12);pointer-events:none";
+      document.body.appendChild(hitboxEl);
+    }
     bubble = new window.PetUI.Bubble();
     menu = new window.PetUI.PetMenu();
     menu.onAction = onMenuAction;
@@ -538,7 +565,9 @@
     setInterval(() => {
       console.log(
         'state=' + S.state + ' y=' + S.y.toFixed(0) + ' x=' + S.x.toFixed(0) +
-        ' vy=' + S.vy.toFixed(0) + ' wall=' + S.wall + ' facing=' + S.facing
+        ' h=' + (character&&character.height) + ' cssW=' + (view&&view.cssW) +
+        ' halfW=' + halfWidth().toFixed(0) + ' hover=' + hover +
+        ' hitSelf=' + hitTest(S.x, S.y - (character.height||BASE_H)/2)
       );
     }, 600);
   }

@@ -237,6 +237,7 @@ npx electron . --start=climb          # 실행하자마자 벽 타기
 npx electron . --start=climbhold      # 벽 타기를 제자리에 고정 (자세 확인용)
 npx electron . --character=kaltsit    # 특정 캐릭터로 실행
 npx electron . --shot=out.png,5000    # 창 내용만 PNG로 저장하고 종료
+npx electron . --hitbox               # 클릭 판정 영역을 화면에 표시
 ```
 
 `--shot` 은 화면 캡처가 아니라 **창 내용만** 찍는다. 다른 창(전체화면 게임 등)에

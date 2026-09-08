@@ -118,8 +118,8 @@ function createWindow() {
   // 기본은 클릭 통과. forward:true 덕분에 renderer는 mousemove를 계속 받는다.
   win.setIgnoreMouseEvents(true, { forward: true });
 
-  const TRACE = process.argv.includes('--trace');
-  win.loadFile(path.join(__dirname, 'renderer', 'index.html'), TRACE ? { search: 'trace' } : {});
+  const flags = ['trace', 'hitbox'].filter((f) => process.argv.includes('--' + f));
+  win.loadFile(path.join(__dirname, 'renderer', 'index.html'), flags.length ? { search: flags.join('&') } : {});
 
   // 렌더러 콘솔을 터미널로 넘긴다 (투명 창이라 오류를 눈으로 볼 수 없다)
   win.webContents.on('console-message', (...args) => {
