@@ -1,0 +1,17 @@
+{
+  "name": "deskpet",
+  "version": "0.1.0",
+  "description": "바탕화면을 돌아다니는 데스크톱 마스코트",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "icon": "node tools/gen-icon.js"
+  },
+  "author": "이찬호",
+  "license": "MIT",
+  "private": true,
+  "devDependencies": {
+    "electron": "^44.2.0"
+  }
+}

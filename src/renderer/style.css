@@ -1,0 +1,21 @@
+/* 창 전체가 투명해야 하므로 배경을 절대 칠하지 않는다 */
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+#pet {
+  position: absolute;
+  top: 0;
+  left: 0;
+  will-change: transform;
+  /* 캐릭터가 커질 때 흐려지지 않도록 */
+  image-rendering: auto;
+}
