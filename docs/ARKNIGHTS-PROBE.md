@@ -1,6 +1,6 @@
 # 명일방주 에셋 추출 가능성 조사
 
-**2026-09-08 조사. 결론: 컨테이너는 열리지만 데이터 블록에서 막힘. 전용 도구 필요.**
+**2026-09-08 조사. 결론: ✅ 추출 가능. 기지 SD는 Spine 3.8.99.**
 
 이 문서는 데스크톱 마스코트에 쓸 SD 캐릭터 소스로 명일방주 에셋이 실현 가능한지
 조사한 기록이다. 조사 목적이며, 에셋은 이 저장소에 **절대 포함하지 않는다.**
@@ -107,21 +107,63 @@ Unity 열거형에서 4는 LZHAM이지만, Unity가 실제로 LZHAM을 쓰는 �
 
 ---
 
-## 그래서 추출이 가능한가
+## ✅ 해결 — ArknightsStudio로 열림
 
-**아직 확정 못 함.** 남은 관문은 데이터 블록 코덱 하나다.
+**ArknightsStudio v1.2.3** (`aelurum/AssetStudioMod`, 태그 `ak-v1.2.3`)로 전부 열렸다.
+`ArknightsStudioCLI_net472_win32_64.zip` — .NET Framework 4.7.2는 Windows 내장이라
+별도 런타임 설치가 필요 없다.
 
-바꿔 말하면 — 커뮤니티가 범용 AssetStudio를 그냥 쓰지 않고
-**명일방주 전용 포크**를 쓰는 이유가 정확히 이 지점이다.
+타입 4가 LZHAM이라는 추정도 맞았다. 다른 포크(`OwlHowlinMornSky/AssetStudio-Arknights`)에
+**"Archive of Attempt to Support Legacy Lzham"** 이라는 릴리스가 있다.
 
-### 다음 단계
+### 기지 SD 캐릭터 위치
 
-1. **ArknightsStudio / AssetStudio-Arknights 실행** — 이 코덱을 처리하는 도구.
-   현재 KR PC 빌드(2021.3.39f1)를 지원하는지가 관건.
-   - ⚠️ 이 PC에 .NET **SDK가 없다** (런타임만 있음). 프리빌드 릴리스가 필요하고,
-     맞는 .NET Desktop Runtime이 있어야 한다.
-2. 열리면 → SD 캐릭터가 실제로 Spine인지, 애니메이션 목록이 뭔지 확인
-3. `.skel` 헤더에서 **Spine 버전 확인** (런타임 버전이 정확히 맞아야 함)
+```
+PersistentData/Bundles/chararts/char_003_kalts.ab
+└─ dyn/building/vault/characters/       ← building = 기지
+   ├─ build_char_003_kalts.skel    159 KB   Spine 바이너리
+   ├─ build_char_003_kalts.atlas     8 KB   평문
+   └─ build_char_003_kalts.png     311 KB   624×624 RGBA8888
+```
+
+같은 번들에 전투용 치비(`char_003_kalts.skel`)도 함께 들어있다.
+`build_` 접두사가 기지용이다. 스킨 버전은 `skinpack/`에 있다.
+
+### 규격
+
+| 항목 | 값 |
+|---|---|
+| Spine 버전 | **3.8.99** (`.skel` 헤더에서 직접 확인) |
+| 아틀라스 | 단일 페이지 624×624, RGBA8888 |
+| 애니메이션 | `Default` `Interact` `Move` `Relax` `Sit` `Sleep` |
+
+애니메이션 세트가 데스크톱 도우미에 필요한 것과 정확히 겹친다.
+대기·이동·앉기·자기·상호작용이 다 있다. **단, 벽 타기 같은 건 당연히 없다.**
+
+### 이 정보가 의미하는 것
+
+- 런타임은 **spine-ts 3.8 브랜치**를 써야 한다. npm의 4.x는 로드 실패한다
+- spine-ts Canvas 백엔드는 메시를 지원하지 않으므로 **WebGL 백엔드** 필요
+- Spine 런타임 배포에는 라이선스가 필요 (개인 비배포면 해당 없음)
+
+### 재현 방법
+
+```bash
+# ArknightsStudio CLI (프리빌드, .NET Framework 4.7.2 = Windows 내장)
+#   https://github.com/aelurum/AssetStudioMod/releases/tag/ak-v1.2.3
+#   ArknightsStudioCLI_net472_win32_64.zip
+
+# 무엇이 들어있는지만 보기
+ArknightsStudioCLI.exe <번들.ab> -m info
+
+# 기지 SD 스켈레톤·아틀라스
+ArknightsStudioCLI.exe <chararts/char_XXX.ab> -m export -t textAsset -o <출력>
+
+# 아틀라스 텍스처
+ArknightsStudioCLI.exe <chararts/char_XXX.ab> -m export -t tex2d --filter-by-name build -o <출력>
+```
+
+추출물은 **저장소 밖**(임시 폴더 또는 gitignore된 `characters/`)에만 둔다.
 
 ---
 
