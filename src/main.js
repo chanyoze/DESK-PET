@@ -26,10 +26,19 @@ function listCharacters() {
  * 캐릭터 하나를 통째로 읽어서 렌더러로 보낸다.
  * file:// XHR 은 Chromium이 막으므로 파일을 직접 실어 보낸다 (프로토콜 등록 불필요).
  */
+/** 트레이에서 고르는 크기 배율 */
+let sizeScale = 1;
+const SIZES = [
+  { label: '작게', value: 0.6 },
+  { label: '보통', value: 1 },
+  { label: '크게', value: 1.45 },
+];
+
 function loadCharacter(id) {
   const dir = path.join(CHAR_DIR, id);
   const manifest = JSON.parse(fs.readFileSync(path.join(dir, 'character.json'), 'utf8'));
   const out = { id, ...manifest, files: {} };
+  out.height = Math.round((manifest.height || 150) * sizeScale);
 
   if (manifest.renderer === 'spine') {
     const atlasText = fs.readFileSync(path.join(dir, manifest.atlas), 'utf8');
@@ -166,6 +175,18 @@ function createTray() {
         click: () => {
           currentCharacter = c.id;
           win?.reload();      // 렌더러가 부팅하며 새 캐릭터를 불러온다
+        },
+      })),
+    },
+    {
+      label: '크기',
+      submenu: SIZES.map((s) => ({
+        label: s.label,
+        type: 'radio',
+        checked: s.value === sizeScale,
+        click: () => {
+          sizeScale = s.value;
+          win?.reload();
         },
       })),
     },

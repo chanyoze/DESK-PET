@@ -52,25 +52,51 @@
       // 투명 창 위에 그리므로 alpha 필수. 프리멀티플라이는 스파인 쪽에서 맞춘다.
       // Unity가 구운 아틀라스는 대개 프리멀티플라이드 알파다. 아니면 외곽에 검은 테가 생긴다.
       this.pma = character.premultipliedAlpha !== false;
-      const gl = canvas.getContext('webgl', {
+      const opts = {
         alpha: true,
         premultipliedAlpha: this.pma,
         antialias: true,
         preserveDrawingBuffer: false,
-      });
+      };
+      // WebGL2를 먼저 시도한다. 아틀라스가 624×624(2의 거듭제곱이 아님)라서
+      // WebGL1에서는 밉맵을 만들 수 없다. 밉맵이 없으면 축소할 때 심하게 깨진다.
+      const gl = canvas.getContext('webgl2', opts) || canvas.getContext('webgl', opts);
       if (!gl) throw new Error('WebGL 컨텍스트를 만들 수 없다');
       this.gl = gl;
+      this.isGL2 = typeof WebGL2RenderingContext !== 'undefined' && gl instanceof WebGL2RenderingContext;
 
-      // 텍스처 준비
+      // 텍스처 준비 — 축소 품질을 위해 밉맵을 생성한다
+      const useMipMaps = this.isGL2;
       const textures = {};
       for (const [name, dataUrl] of Object.entries(character.files.textures || {})) {
         const img = await loadImage(dataUrl);
-        textures[name] = new spine.webgl.GLTexture(gl, img);
+        textures[name] = new spine.webgl.GLTexture(gl, img, useMipMaps);
       }
       const firstTexture = Object.values(textures)[0];
 
       // 아틀라스 — 텍스처를 이름으로 찾아 준다
       const atlas = new spine.TextureAtlas(character.files.atlas, (p) => textures[p] || firstTexture);
+
+      // 아틀라스 파일의 'filter: Linear,Linear'가 위 설정을 덮어쓰므로 여기서 되돌린다.
+      // 축소(minification)에는 삼중선형 + 이방성 필터가 필요하다.
+      const aniso =
+        gl.getExtension('EXT_texture_filter_anisotropic') ||
+        gl.getExtension('WEBKIT_EXT_texture_filter_anisotropic');
+      for (const tex of Object.values(textures)) {
+        if (useMipMaps) {
+          tex.setFilters(spine.TextureFilter.MipMapLinearLinear, spine.TextureFilter.Linear);
+        }
+        if (aniso) {
+          tex.bind();
+          const max = gl.getParameter(aniso.MAX_TEXTURE_MAX_ANISOTROPY_EXT);
+          gl.texParameterf(gl.TEXTURE_2D, aniso.TEXTURE_MAX_ANISOTROPY_EXT, Math.min(8, max));
+        }
+      }
+      console.log(
+        '[spine] ' + (this.isGL2 ? 'WebGL2' : 'WebGL1') +
+        ' / 밉맵 ' + (useMipMaps ? 'O' : 'X') +
+        ' / 이방성 ' + (aniso ? 'O' : 'X')
+      );
 
       const atlasLoader = new spine.AtlasAttachmentLoader(atlas);
       const binary = new spine.SkeletonBinary(atlasLoader);
@@ -113,13 +139,16 @@
         ' 원점(' + Math.round(this.originX) + ',' + Math.round(this.originY) + ')'
       );
 
+      this.ssaa = character.supersample || 2;   // 표시 크기의 몇 배로 그릴지
       this.resize();
       this.ready = true;
       return this;
     }
 
     resize() {
-      const dpr = window.devicePixelRatio || 1;
+      // 슈퍼샘플링: 표시 크기보다 크게 그린 뒤 브라우저가 줄이게 한다.
+      // 텍스처 축소 배율이 완만해져서 디테일이 훨씬 살아난다.
+      const dpr = (window.devicePixelRatio || 1) * this.ssaa;
       this.dpr = dpr;
       this.el.width = Math.round(this.cssW * dpr);
       this.el.height = Math.round(this.cssH * dpr);
