@@ -1,13 +1,17 @@
 /**
- * 캐릭터 리그 (파츠 분리 방식)
+ * 캐릭터 리그 (파츠 분리 + 2단 관절 + IK)
  * -------------------------------------------------------------
  * 그림 한 장 한 장을 프레임으로 찍는 대신, 몸을 파츠로 쪼개고
- * 각 관절의 각도를 코드로 움직인다. 122장 대신 파츠 6개면 된다.
+ * 각 관절의 각도를 코드로 움직인다.
  *
- * 나중에 진짜 아트가 생기면 각 파츠의 DRAW만 이미지 drawImage로
- * 바꾸면 애니메이션 코드는 그대로 쓸 수 있다.
+ * 팔다리는 상완/전완, 허벅지/정강이의 2단 관절이다. 덕분에
+ * IK(역운동학)를 쓸 수 있다 — "손을 여기에 놓아라"라고 목표점만
+ * 주면 어깨·팔꿈치 각도를 역산해준다. 벽 타기처럼 잡을 위치가
+ * 매번 달라지는 동작은 이 방식이 아니면 만들 수 없다.
  *
  * 좌표계: 발바닥 가운데가 원점 (0,0), 위쪽이 -y, 키는 64유닛.
+ * 뼈는 로컬 +y 방향(아래)을 향하고, 각도 θ는 그 방향을 회전시킨다.
+ *   끝점 방향 = (-sin θ, cos θ)   →   방향 (dx,dy)를 향하려면 θ = atan2(-dx, dy)
  */
 (function () {
   'use strict';
@@ -27,16 +31,72 @@
   // ── 뼈대: pivot은 부모 관절 기준 상대 좌표 ───────────────────
   const RIG = {
     // 그리는 순서 (뒤 → 앞)
-    order: ['legBack', 'armBack', 'body', 'legFront', 'armFront', 'head'],
+    order: [
+      'legBackU', 'legBackL', 'armBackU', 'armBackL',
+      'body',
+      'legFrontU', 'legFrontL', 'armFrontU', 'armFrontL',
+      'head',
+    ],
     parts: {
-      body: { parent: null, pivot: [0, -14] },        // 골반
-      head: { parent: 'body', pivot: [0, -20] },      // 목
-      armBack: { parent: 'body', pivot: [-8, -16] },  // 어깨
-      armFront: { parent: 'body', pivot: [8, -16] },
-      legBack: { parent: null, pivot: [-4.5, -14] },  // 고관절
-      legFront: { parent: null, pivot: [4.5, -14] },
+      body: { parent: null, pivot: [0, -14] },            // 골반
+      head: { parent: 'body', pivot: [0, -20] },          // 목
+
+      armBackU: { parent: 'body', pivot: [-8, -16] },     // 어깨
+      armBackL: { parent: 'armBackU', pivot: [0, 8] },    // 팔꿈치
+      armFrontU: { parent: 'body', pivot: [8, -16] },
+      armFrontL: { parent: 'armFrontU', pivot: [0, 8] },
+
+      legBackU: { parent: null, pivot: [-4.5, -14] },     // 고관절
+      legBackL: { parent: 'legBackU', pivot: [0, 7] },    // 무릎
+      legFrontU: { parent: null, pivot: [4.5, -14] },
+      legFrontL: { parent: 'legFrontU', pivot: [0, 7] },
     },
   };
+
+  /** 뼈 길이 — IK 계산과 그리기가 같은 값을 쓴다 */
+  const LEN = {
+    armBackU: 8, armBackL: 7,
+    armFrontU: 8, armFrontL: 7,
+    legBackU: 7, legBackL: 7,
+    legFrontU: 7, legFrontL: 7,
+  };
+  const WID = {
+    armBackU: 5.5, armBackL: 5.0,
+    armFrontU: 5.5, armFrontL: 5.0,
+    legBackU: 6.5, legBackL: 6.0,
+    legFrontU: 6.5, legFrontL: 6.0,
+  };
+
+  /** IK 체인 이름 → 상완/전완 파츠 */
+  const CHAINS = {
+    armBack: ['armBackU', 'armBackL'],
+    armFront: ['armFrontU', 'armFrontL'],
+    legBack: ['legBackU', 'legBackL'],
+    legFront: ['legFrontU', 'legFrontL'],
+  };
+
+  const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+
+  /**
+   * 2관절 IK — 목표점 (tx, ty)에 끝점이 닿도록 두 각도를 구한다.
+   * 좌표는 상완 관절이 원점인 로컬 공간. bend는 팔꿈치가 접히는 방향(+1/-1).
+   * 코사인 법칙 닫힌 해라 반복 계산이 없다.
+   */
+  function ik2(tx, ty, L1, L2, bend) {
+    bend = bend || 1;
+    const dmax = L1 + L2 - 0.01;
+    const dmin = Math.abs(L1 - L2) + 0.01;
+    const d = clamp(Math.hypot(tx, ty), dmin, dmax); // 닿을 수 없으면 최대한 뻗는다
+
+    const base = Math.atan2(-tx, ty);                        // 목표를 직접 겨누는 각
+    const A = Math.acos(clamp((L1 * L1 + d * d - L2 * L2) / (2 * L1 * d), -1, 1));
+    const B = Math.acos(clamp((L1 * L1 + L2 * L2 - d * d) / (2 * L1 * L2), -1, 1));
+
+    return {
+      upper: base + A * bend,
+      lower: -(Math.PI - B) * bend,   // 전완은 상완 기준 상대각
+    };
+  }
 
   /** 팔·다리: 굵은 선 두 번(테두리색 → 몸색)이면 캡슐 + 아웃라인이 공짜 */
   function limb(ctx, len, w, color) {
@@ -61,11 +121,6 @@
 
   // ── 파츠별 그리기 (각자 자기 관절이 원점) ────────────────────
   const DRAW = {
-    legBack: (ctx) => limb(ctx, 13, 6.5, PALETTE.bodyDark),
-    legFront: (ctx) => limb(ctx, 13, 6.5, PALETTE.limb),
-    armBack: (ctx) => limb(ctx, 15, 5.5, PALETTE.bodyDark),
-    armFront: (ctx) => limb(ctx, 15, 5.5, PALETTE.limb),
-
     body: (ctx) => {
       outlined(ctx, () => {
         ctx.beginPath();
@@ -106,7 +161,6 @@
           ctx.ellipse(s * ex + 0.9, ey - 1.2 * open, 0.9, 1.1 * open, 0, 0, Math.PI * 2);
           ctx.fill();
         } else {
-          // 감은 눈: 아래로 볼록한 호
           ctx.strokeStyle = PALETTE.face;
           ctx.lineWidth = 1.6; ctx.lineCap = 'round';
           ctx.beginPath();
@@ -138,6 +192,12 @@
     },
   };
 
+  // 팔다리는 규격이 같으므로 자동 생성 (뒤쪽 파츠는 어두운 색)
+  for (const name of Object.keys(LEN)) {
+    const dark = name.indexOf('Back') >= 0;
+    DRAW[name] = (ctx) => limb(ctx, LEN[name], WID[name], dark ? PALETTE.bodyDark : PALETTE.limb);
+  }
+
   // ── 애니메이션: 경과 시간 t(초) → 관절 포즈 ──────────────────
   function blink(t) {
     const c = (t * 1000) % 4300;
@@ -150,19 +210,24 @@
       return {
         body: { dy: b * 0.5 },
         head: { angle: Math.sin(t * 0.6) * 0.05, dy: b * 0.4 },
-        armBack: { angle: 0.10 + b * 0.04 },
-        armFront: { angle: -0.10 - b * 0.04 },
+        armBackU: { angle: 0.10 + b * 0.04 }, armBackL: { angle: -0.14 },
+        armFrontU: { angle: -0.10 - b * 0.04 }, armFrontL: { angle: -0.14 },
+        legBackU: { angle: 0.03 }, legBackL: { angle: 0.05 },
+        legFrontU: { angle: -0.03 }, legFrontL: { angle: 0.05 },
         eye: blink(t),
       };
     },
 
     walk(t) {
-      const s = Math.sin(t * 8.5);
+      const p = t * 8.5;
+      const s = Math.sin(p);
+      // 무릎은 다리를 들어올릴 때만 굽힌다 (발이 바닥을 스치지 않게)
+      const knee = (ph) => 0.12 + Math.max(0, Math.sin(ph - 1.3)) * 0.75;
       return {
-        legFront: { angle: s * 0.55 },
-        legBack: { angle: -s * 0.55 },
-        armFront: { angle: -s * 0.5 },
-        armBack: { angle: s * 0.5 },
+        legFrontU: { angle: s * 0.55 }, legFrontL: { angle: knee(p) },
+        legBackU: { angle: -s * 0.55 }, legBackL: { angle: knee(p + Math.PI) },
+        armFrontU: { angle: -s * 0.5 }, armFrontL: { angle: -0.3 - Math.max(0, s) * 0.25 },
+        armBackU: { angle: s * 0.5 }, armBackL: { angle: -0.3 - Math.max(0, -s) * 0.25 },
         body: { dy: -Math.abs(s) * 1.6, angle: 0.06 },
         head: { angle: -0.04 + s * 0.03, dy: -Math.abs(s) * 0.6 },
         eye: blink(t),
@@ -172,11 +237,12 @@
     sit(t) {
       const b = Math.sin(t * 1.6);
       return {
-        root: { dy: 11 },
-        legFront: { angle: -1.5 },
-        legBack: { angle: -1.32 },
-        armFront: { angle: 0.55 },
-        armBack: { angle: 0.48 },
+        root: { dy: 5 },
+        // 무릎이 생겨서 이제 진짜로 앉는다
+        legFrontU: { angle: -1.35 }, legFrontL: { angle: 1.45 },
+        legBackU: { angle: -1.18 }, legBackL: { angle: 1.32 },
+        armFrontU: { angle: 0.3 }, armFrontL: { angle: 0.2 },
+        armBackU: { angle: 0.26 }, armBackL: { angle: 0.2 },
         body: { angle: -0.07, dy: b * 0.4 },
         head: { angle: 0.06 + b * 0.02 },
         eye: blink(t),
@@ -186,11 +252,11 @@
     sleep(t) {
       const b = Math.sin(t * 0.9);
       return {
-        root: { dy: 12 },
-        legFront: { angle: -1.52 },
-        legBack: { angle: -1.34 },
-        armFront: { angle: 0.62 },
-        armBack: { angle: 0.55 },
+        root: { dy: 6 },
+        legFrontU: { angle: -1.4 }, legFrontL: { angle: 1.5 },
+        legBackU: { angle: -1.22 }, legBackL: { angle: 1.38 },
+        armFrontU: { angle: 0.38 }, armFrontL: { angle: 0.3 },
+        armBackU: { angle: 0.32 }, armBackL: { angle: 0.3 },
         body: { angle: -0.1, dy: b * 0.6 },
         head: { angle: 0.32, dy: b * 0.4 + 1 },
         eye: 0,
@@ -201,10 +267,10 @@
     drag(t) {
       const s = Math.sin(t * 6);
       return {
-        armFront: { angle: 2.6 + s * 0.12 },
-        armBack: { angle: -2.6 - s * 0.12 },
-        legFront: { angle: 0.2 + s * 0.18 },
-        legBack: { angle: -0.15 - s * 0.18 },
+        armFrontU: { angle: 2.6 + s * 0.12 }, armFrontL: { angle: 0.35 },
+        armBackU: { angle: -2.6 - s * 0.12 }, armBackL: { angle: -0.35 },
+        legFrontU: { angle: 0.2 + s * 0.18 }, legFrontL: { angle: 0.3 },
+        legBackU: { angle: -0.15 - s * 0.18 }, legBackL: { angle: 0.3 },
         body: { angle: s * 0.05 },
         head: { angle: -s * 0.06 },
         eye: 1,
@@ -214,11 +280,43 @@
     fall(t) {
       const s = Math.sin(t * 14);
       return {
-        armFront: { angle: 2.4 + s * 0.3 },
-        armBack: { angle: -2.4 + s * 0.3 },
-        legFront: { angle: 0.45 },
-        legBack: { angle: -0.4 },
+        armFrontU: { angle: 2.4 + s * 0.3 }, armFrontL: { angle: 0.4 },
+        armBackU: { angle: -2.4 + s * 0.3 }, armBackL: { angle: -0.4 },
+        legFrontU: { angle: 0.45 }, legFrontL: { angle: 0.35 },
+        legBackU: { angle: -0.4 }, legBackL: { angle: 0.35 },
         body: { angle: s * 0.08 },
+        eye: 1,
+      };
+    },
+
+    /**
+     * 벽 타기 — 여기가 IK를 쓰는 이유.
+     * 손발의 '목표점'만 주면 관절 각도는 역산된다. 잡을 높이가
+     * 매번 달라져도(창 모서리, 화면 끝) 같은 코드로 대응된다.
+     * 벽은 로컬 +x 쪽에 있다고 본다.
+     */
+    climb(t) {
+      const s = Math.sin(t * 2.6);
+      return {
+        // 몸통을 벽 쪽으로 기울여 '매달린' 느낌을 준다. 어깨가 움직여도
+        // IK가 알아서 다시 풀기 때문에 손은 벽에 붙어 있는다.
+        body: { angle: 0.24, dy: -s * 0.7 },
+        head: { angle: 0.1 },
+        // 머리가 커서 어깨 위가 다 가려진다. 벽 쪽 팔만 머리 위로 올려 그린다.
+        order: [
+          'legBackU', 'legBackL', 'armBackU', 'armBackL',
+          'body',
+          'legFrontU', 'legFrontL',
+          'head',
+          'armFrontU', 'armFrontL',
+        ],
+        ik: {
+          // 손은 번갈아 위를 잡고, 발은 번갈아 벽을 민다
+          armFront: { x: 12, y: -44 + s * 5, bend: -1 },
+          armBack: { x: 2, y: -38 - s * 5, bend: -1 },
+          legFront: { x: 10, y: -20 - s * 5, bend: -1 },
+          legBack: { x: 4, y: -10 + s * 5, bend: -1 },
+        },
         eye: 1,
       };
     },
@@ -229,10 +327,10 @@
       return {
         body: { dy: 1 + b * 0.8, angle: b * 0.03 },
         head: { angle: b * 0.09, dy: 1 + b * 0.5 },
-        armBack: { angle: 0.5 + b * 0.25 },
-        armFront: { angle: -0.5 - b * 0.25 },
-        legFront: { angle: b * 0.1 },
-        legBack: { angle: -b * 0.1 },
+        armBackU: { angle: 0.5 + b * 0.25 }, armBackL: { angle: -0.4 },
+        armFrontU: { angle: -0.5 - b * 0.25 }, armFrontL: { angle: -0.4 },
+        legFrontU: { angle: b * 0.1 }, legFrontL: { angle: 0.06 },
+        legBackU: { angle: -b * 0.1 }, legBackL: { angle: 0.06 },
         eye: 0,
         smile: true,
         hearts: true,
@@ -253,9 +351,12 @@
 
     ctx.save();
     if (facing < 0) ctx.scale(-1, 1);
-    if (pose.root) ctx.translate(pose.root.dx || 0, pose.root.dy || 0);
+    if (pose.root) {
+      ctx.translate(pose.root.dx || 0, pose.root.dy || 0);
+      if (pose.root.angle) ctx.rotate(pose.root.angle);
+    }
 
-    // 1) 관절 트랜스폼 계산 (부모 → 자식)
+    // 관절 트랜스폼 계산 (부모 → 자식, 메모이제이션)
     const world = {};
     function resolve(name) {
       if (world[name]) return world[name];
@@ -270,9 +371,29 @@
       return m;
     }
 
-    // 2) 그리는 순서는 계층과 따로 (팔이 몸통 뒤로 갈 수 있게)
+    // 1) IK 패스 — 목표점을 각도로 바꿔서 pose에 써넣는다.
+    //    U/L 뼈를 resolve 하기 전에 끝내야 하므로 부모까지만 계산한다.
+    if (pose.ik) {
+      for (const chain of Object.keys(pose.ik)) {
+        const tgt = pose.ik[chain];
+        const names = CHAINS[chain];
+        if (!names) continue;
+        const part = RIG.parts[names[0]];
+        // 상완 관절의 월드 행렬 (자기 회전은 아직 반영 전)
+        const parentM = part.parent ? resolve(part.parent) : new DOMMatrix();
+        const jointM = parentM.translate(part.pivot[0], part.pivot[1]);
+        // 목표점을 그 관절의 로컬 좌표로 옮긴다
+        const local = jointM.inverse().transformPoint(new DOMPoint(tgt.x, tgt.y));
+        const sol = ik2(local.x, local.y, LEN[names[0]], LEN[names[1]], tgt.bend);
+        pose[names[0]] = { angle: sol.upper };
+        pose[names[1]] = { angle: sol.lower };
+      }
+    }
+
+    // 2) 그리는 순서는 계층과 따로 (팔이 몸통 뒤로 갈 수 있게).
+    //    동작에 따라 순서를 바꿔야 할 때가 있어 pose.order로 덮어쓸 수 있다.
     const base = ctx.getTransform();
-    for (const name of RIG.order) {
+    for (const name of (pose.order || RIG.order)) {
       ctx.setTransform(base.multiply(resolve(name)));
       DRAW[name](ctx, pose);
     }
@@ -296,10 +417,8 @@
       ctx.globalAlpha = Math.sin(p * Math.PI) * 0.95;
       const size = 7 + p * 7;
       ctx.font = 'bold ' + size.toFixed(1) + 'px system-ui, sans-serif';
-      const x = 13 + p * 11;
-      const y = -42 - p * 22;
-      ctx.strokeText('z', x, y);
-      ctx.fillText('z', x, y);
+      ctx.strokeText('z', 13 + p * 11, -42 - p * 22);
+      ctx.fillText('z', 13 + p * 11, -42 - p * 22);
     }
     ctx.restore();
   }
@@ -328,6 +447,7 @@
 
   window.Character = {
     draw: draw,
+    ik2: ik2,
     PALETTE: PALETTE,
     /** 캐릭터가 차지하는 유닛 크기 (발바닥 원점 기준) */
     METRICS: { height: 64, width: 40, padTop: 28, padSide: 18, padBottom: 4 },

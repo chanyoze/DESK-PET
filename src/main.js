@@ -18,6 +18,7 @@ function getStage() {
     height: bounds.height,
     // 작업 표시줄 윗변 = 캐릭터가 걸어다닐 바닥선
     ground: workArea.y + workArea.height - bounds.y,
+    workTop: workArea.y - bounds.y,
     workLeft: workArea.x - bounds.x,
     workRight: workArea.x + workArea.width - bounds.x,
   };
@@ -56,9 +57,27 @@ function createWindow() {
   // 기본은 클릭 통과. forward:true 덕분에 renderer는 mousemove를 계속 받는다.
   win.setIgnoreMouseEvents(true, { forward: true });
 
-  win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+  const TRACE = process.argv.includes('--trace');
+  win.loadFile(path.join(__dirname, 'renderer', 'index.html'), TRACE ? { search: 'trace' } : {});
+
+  // 렌더러 콘솔을 터미널로 넘긴다 (투명 창이라 오류를 눈으로 볼 수 없다)
+  win.webContents.on('console-message', (...args) => {
+    const e = args[0];
+    const msg = e && typeof e === 'object' && 'message' in e
+      ? `${e.message} (${e.sourceId}:${e.lineNumber})`   // Electron 신버전
+      : `${args[2]} (${args[4]}:${args[3]})`;            // 구버전 시그니처
+    console.log('[renderer]', msg);
+  });
 
   if (DEV) win.webContents.openDevTools({ mode: 'detach' });
+
+  // 특정 동작을 바로 확인하고 싶을 때: electron . --start=climb
+  const start = (process.argv.find((a) => a.startsWith('--start=')) || '').split('=')[1];
+  if (start) {
+    win.webContents.once('did-finish-load', () => {
+      setTimeout(() => win?.webContents.send('pet:command', start), 400);
+    });
+  }
 
   win.on('closed', () => { win = null; });
 }
@@ -70,6 +89,7 @@ function createTray() {
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: '가운데로 불러오기', click: () => win?.webContents.send('pet:command', 'recall') },
     { label: '깨우기', click: () => win?.webContents.send('pet:command', 'wake') },
+    { label: '벽 타기', click: () => win?.webContents.send('pet:command', 'climb') },
     { type: 'separator' },
     { label: '개발자 도구', click: () => win?.webContents.openDevTools({ mode: 'detach' }) },
     { type: 'separator' },
