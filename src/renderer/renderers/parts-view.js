@@ -40,6 +40,11 @@
       return this;
     }
 
+    dispose() {
+      if (this.el && this.el.parentNode) this.el.parentNode.removeChild(this.el);
+      this.el = null;
+    }
+
     resize() {
       const dpr = window.devicePixelRatio || 1;
       this.dpr = dpr;

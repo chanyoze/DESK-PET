@@ -52,17 +52,29 @@
     if (name === 'idle' || name === 'sit' || name === 'sleep' || name === 'pet') S.vx = 0;
   }
 
-  /** 다음에 뭘 할지 고른다 (아주 단순한 행동 스케줄러) */
+  /**
+   * 다음에 뭘 할지 고른다.
+   * 전에는 앉기→자기가 45%였고 자고 일어나면 바로 다시 앉아서, 사실상
+   * 앉기↔자기를 반복했다. 잠은 드물게, 깨어난 뒤에는 한동안 안 자게 한다.
+   */
+  let sleepCooldown = 0;
   function pickNext() {
     const r = Math.random();
-    if (S.state === 'sleep') return setState('sit', rand(2, 4));
-    if (S.state === 'sit' && r < 0.45) return setState('sleep', rand(10, 25));
-    if (r < 0.45) {
-      S.dir = Math.random() < 0.5 ? -1 : 1;
-      return setState('walk', rand(2, 5.5));
+    if (sleepCooldown > 0) sleepCooldown--;
+
+    if (S.state === 'sleep') {
+      sleepCooldown = 6;                       // 깨면 당분간 다시 안 잔다
+      return setState('idle', rand(2, 4));
     }
-    if (r < 0.78) return setState('idle', rand(1.5, 4));
-    return setState('sit', rand(4, 10));
+    if (S.state === 'sit' && sleepCooldown <= 0 && r < 0.15) {
+      return setState('sleep', rand(6, 12));
+    }
+    if (r < 0.58) {                            // 걷기를 기본 행동으로
+      S.dir = Math.random() < 0.5 ? -1 : 1;
+      return setState('walk', rand(3, 7));
+    }
+    if (r < 0.85) return setState('idle', rand(1.5, 3.5));
+    return setState('sit', rand(2.5, 6));
   }
 
   const RESTING = ['idle', 'walk', 'sit', 'sleep', 'pet'];
@@ -222,7 +234,7 @@
     drag = null;
     if (tapped) {
       S.vx = 0; S.vy = 0;
-      setState('pet', 1.7);
+      switchNext();              // 클릭하면 다음 오퍼레이터로 교체
     } else {
       S.vx = clamp(S.vx, -THROW_MAX, THROW_MAX);
       S.vy = clamp(S.vy, -THROW_MAX, THROW_MAX);
@@ -266,22 +278,70 @@
     });
   }
 
-  async function boot() {
-    character = await window.petAPI.loadCharacter();
-    console.log('[pet] 캐릭터:', character.name, '(' + character.renderer + ')');
+  // ── 캐릭터 교체 ─────────────────────────────────────────────
+  let roster = [];        // 설치된 캐릭터 목록
+  let switching = false;
+  let spineLoaded = false;
 
-    if (character.renderer === 'spine') {
-      await loadScript('../../vendor/spine/spine-webgl.js');
-      view = await new window.SpineView().init(character);
-    } else {
-      view = await new window.PartsView().init(character);
+  async function makeView(next) {
+    if (next.renderer === 'spine') {
+      if (!spineLoaded) {
+        await loadScript('../../vendor/spine/spine-webgl.js');
+        spineLoaded = true;
+      }
+      return new window.SpineView().init(next);
     }
+    return new window.PartsView().init(next);
+  }
 
-    // 캐릭터 크기에 맞춰 물리 배율을 잡는다
+  /** 캐릭터에 맞춰 물리 배율을 다시 잡는다 */
+  function applyPhysics() {
     PX = (character.height || BASE_H) / BASE_H;
     GRAVITY = 1980 * PX;
     WALK_SPEED = (character.walkSpeed || 57) * PX;
     CLIMB_SPEED = 121 * PX;
+  }
+
+  /**
+   * 다음 오퍼레이터로 교체한다. 위치와 상태는 그대로 두고 뷰만 갈아끼운다.
+   * 창을 새로 띄우지 않으므로 캐릭터가 서 있던 자리에서 바뀐다.
+   */
+  async function switchNext() {
+    if (switching || roster.length < 2) return;
+    switching = true;
+    const from = character && character.name;
+    try {
+      const i = roster.findIndex((c) => c.id === (character && character.id));
+      const next = roster[(i + 1 + roster.length) % roster.length];
+      const loaded = await window.petAPI.loadCharacter(next.id);
+      const nv = await makeView(loaded);
+
+      const old = view;
+      character = loaded;
+      view = nv;
+      if (old) old.dispose();       // WebGL 컨텍스트 반납
+
+      applyPhysics();
+      S.y = Math.min(S.y, stage.ground);
+      view.play(animFor(S.state));
+      setState('pet', 1.6);         // 등장 인사
+      view.play(animFor('pet'));
+      console.log('[pet] 교체:', from, '→', character.name);
+    } catch (e) {
+      console.error('교체 실패:', e && e.stack ? e.stack : e);
+    } finally {
+      switching = false;
+    }
+  }
+
+  async function boot() {
+    roster = await window.petAPI.listCharacters();
+    character = await window.petAPI.loadCharacter();
+    console.log('[pet] 캐릭터:', character.name, '(' + character.renderer + ')');
+    console.log('[pet] 설치된 캐릭터', roster.length + '명:', roster.map((c) => c.name).join(', '));
+
+    view = await makeView(character);
+    applyPhysics();
 
     const s = await window.petAPI.getStage();
     applyStage(s);
@@ -302,6 +362,8 @@
       S.vx = 0; S.vy = 0;
       S.hold = false;
       setState('fall');
+    } else if (cmd === 'next') {
+      switchNext();
     } else if (cmd === 'wake') {
       setState('idle', 3);
     } else if (cmd === 'climb' || cmd === 'climbhold') {

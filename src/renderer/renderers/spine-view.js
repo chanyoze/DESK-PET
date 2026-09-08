@@ -99,12 +99,41 @@
       );
 
       const atlasLoader = new spine.AtlasAttachmentLoader(atlas);
-      const binary = new spine.SkeletonBinary(atlasLoader);
-      binary.scale = 1;
-      const skeletonData = binary.readSkeletonData(base64ToBytes(character.files.skeleton));
+
+      // 스켈레톤은 바이너리(.skel)와 JSON 두 형식이 섞여 있다. 첫 글자로 판별한다.
+      const bytes = base64ToBytes(character.files.skeleton);
+      const isJson = bytes[0] === 0x7b; // '{'
+      let skeletonData;
+      if (isJson) {
+        const json = new spine.SkeletonJson(atlasLoader);
+        json.scale = 1;
+        skeletonData = json.readSkeletonData(new TextDecoder('utf-8').decode(bytes));
+      } else {
+        const binary = new spine.SkeletonBinary(atlasLoader);
+        binary.scale = 1;
+        skeletonData = binary.readSkeletonData(bytes);
+      }
+      console.log('[spine] 형식:', isJson ? 'JSON' : '바이너리');
 
       this.skeleton = new spine.Skeleton(skeletonData);
       this.skeletonData = skeletonData;
+
+      // JSON 스켈레톤은 width/height가 없을 수 있다. 셋업 포즈에서 직접 잰다.
+      if (!(skeletonData.width > 0) || !(skeletonData.height > 0)) {
+        this.skeleton.setToSetupPose();
+        this.skeleton.updateWorldTransform();
+        const off = new spine.Vector2();
+        const size = new spine.Vector2();
+        this.skeleton.getBounds(off, size, []);
+        skeletonData.x = off.x;
+        skeletonData.y = off.y;
+        skeletonData.width = size.x;
+        skeletonData.height = size.y;
+        console.log(
+          '[spine] 바운즈를 셋업 포즈에서 계산: ' +
+          Math.round(size.x) + '×' + Math.round(size.y)
+        );
+      }
       const stateData = new spine.AnimationStateData(skeletonData);
       stateData.defaultMix = 0.18;   // 동작 전환을 부드럽게 (파츠 리그엔 없던 것)
       this.state = new spine.AnimationState(stateData);
@@ -143,6 +172,16 @@
       this.resize();
       this.ready = true;
       return this;
+    }
+
+    dispose() {
+      // WebGL 컨텍스트는 브라우저당 개수 제한이 있다. 교체 시 반드시 반납한다.
+      try {
+        const lose = this.gl && this.gl.getExtension("WEBGL_lose_context");
+        if (lose) lose.loseContext();
+      } catch (e) { /* 무시 */ }
+      if (this.el && this.el.parentNode) this.el.parentNode.removeChild(this.el);
+      this.el = null;
     }
 
     resize() {
