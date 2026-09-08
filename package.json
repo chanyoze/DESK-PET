@@ -1,6 +1,6 @@
 {
   "name": "deskpet",
-  "version": "0.1.0",
+  "version": "0.5.0",
   "description": "바탕화면을 돌아다니는 데스크톱 마스코트",
   "main": "src/main.js",
   "scripts": {
@@ -10,12 +10,49 @@
     "fetch-spine": "node tools/fetch-spine.js",
     "kaltsit": "electron . --character=kaltsit",
     "say": "node tools/say.js",
-    "check-pma": "node tools/check-pma.js"
+    "check-pma": "node tools/check-pma.js",
+    "dist": "electron-builder --win portable",
+    "pack": "electron-builder --dir"
   },
   "author": "이찬호",
   "license": "MIT",
   "private": true,
   "devDependencies": {
-    "electron": "^44.2.0"
+    "electron": "^44.2.0",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "com.chanyoze.deskpet",
+    "productName": "DeskPet",
+    "copyright": "MIT",
+    "directories": {
+      "output": "dist",
+      "buildResources": "assets"
+    },
+    "files": [
+      "!**/*",
+      "src/**/*",
+      "assets/icon.png",
+      "assets/tray.png",
+      "tools/say.js",
+      "tools/fetch-spine.js",
+      "characters/default/**/*",
+      "package.json"
+    ],
+    "win": {
+      "icon": "assets/icon.png",
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "portable": {
+      "artifactName": "DeskPet-${version}.exe"
+    },
+    "compression": "maximum"
   }
 }

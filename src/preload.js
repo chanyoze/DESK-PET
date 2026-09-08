@@ -16,6 +16,9 @@ contextBridge.exposeInMainWorld('petAPI', {
   setCharacter: (id) => ipcRenderer.invoke('settings:setCharacter', id),
   addReminder: (r) => ipcRenderer.invoke('reminders:add', r),
   removeReminder: (id) => ipcRenderer.invoke('reminders:remove', id),
+  getSpinePath: () => ipcRenderer.invoke('spine:path'),
+  getPaths: () => ipcRenderer.invoke('paths:get'),
+  setChat: (v) => ipcRenderer.invoke('settings:setChat', v),
   quit: () => ipcRenderer.send('app:quit'),
 
   // ── 메인 → 렌더러 ──

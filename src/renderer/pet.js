@@ -237,6 +237,8 @@
   // ── 말풍선 · 메뉴 ───────────────────────────────────────────
   let bubble = null;
   let menu = null;
+  let chatter = null;
+  let chatOn = true;     // 혼잣말 켜짐 (설정에 저장)
   let hitboxEl = null;   // --hitbox 디버그 표시
 
   /** 외부 알림 / 리마인더 → 캐릭터가 말하고 반응한다 */
@@ -269,8 +271,13 @@
 
     const acts = [{ label: '쓰다듬기', value: 'act:pet' }];
     if (view && view.has(animFor('special'))) acts.push({ label: '특별 동작', value: 'act:special' });
+    acts.push({ label: '말 시키기', value: 'act:talk' });
     acts.push({ label: '가운데로 부르기', value: 'act:recall' });
     sections.push({ title: '동작', items: acts });
+
+    sections.push({
+      items: [{ label: '혼잣말', value: 'act:chat', checked: chatOn }],
+    });
 
     sections.push({
       title: '리마인더',
@@ -314,7 +321,12 @@
     } else if (kind === 'act') {
       if (arg === 'pet') setState('pet', 2.2);
       else if (arg === 'special') setState('special', 3);
-      else if (arg === 'recall') {
+      else if (arg === 'talk') chatter && chatter.prod();
+      else if (arg === 'chat') {
+        chatOn = !chatOn;
+        window.petAPI.setChat(chatOn);
+        say({ text: chatOn ? '이제 종종 말 걸게' : '조용히 있을게', ms: 2200 });
+      } else if (arg === 'recall') {
         S.x = (stage.workLeft + stage.workRight) / 2;
         S.y = stage.ground - 300;
         S.vx = 0; S.vy = 0;
@@ -452,7 +464,9 @@
   async function makeView(next) {
     if (next.renderer === 'spine') {
       if (!spineLoaded) {
-        await loadScript('../../vendor/spine/spine-webgl.js');
+        const url = await window.petAPI.getSpinePath();
+        if (!url) throw new Error('Spine 런타임이 없다. npm run fetch-spine 또는 userData/vendor/spine 에 넣을 것');
+        await loadScript(url);
         spineLoaded = true;
       }
       return new window.SpineView().init(next);
@@ -493,6 +507,7 @@
       if (old) old.dispose();       // WebGL 컨텍스트 반납
 
       applyPhysics();
+      if (chatter) chatter.setCharacter(character);
       S.y = Math.min(S.y, stage.ground);
       view.play(animFor(S.state));
       setState('pet', 1.6);         // 등장 인사
@@ -517,6 +532,13 @@
 
     const cfg = await window.petAPI.getSettings();
     reminders = cfg.reminders || [];
+    chatOn = cfg.chatter !== false;
+
+    chatter = new window.Chatter({
+      say: say,
+      getState: () => S.state,
+      enabled: () => chatOn,
+    });
     roster = await window.petAPI.listCharacters();
     character = await window.petAPI.loadCharacter();
     console.log('[pet] 캐릭터:', character.name, '(' + character.renderer + ')');
@@ -524,6 +546,8 @@
 
     view = await makeView(character);
     applyPhysics();
+    chatter.setCharacter(character);
+    chatter.start();
 
     const s = await window.petAPI.getStage();
     applyStage(s);

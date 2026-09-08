@@ -7,7 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
 
-const SIZE = 32;
+const SIZE = parseInt(process.argv[2] || "32", 10);
 
 const TABLE = (() => {
   const t = new Int32Array(256);
@@ -82,6 +82,6 @@ function build() {
   ]);
 }
 
-const out = path.join(__dirname, '..', 'assets', 'tray.png');
+const out = path.join(__dirname, '..', 'assets', process.argv[3] || 'tray.png');
 fs.writeFileSync(out, build());
 console.log('생성됨:', out);

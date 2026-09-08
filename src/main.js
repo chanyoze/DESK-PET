@@ -1,27 +1,65 @@
 const { app, BrowserWindow, screen, ipcMain, Tray, Menu, nativeImage } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { pathToFileURL } = require('url');
 const settings = require('./settings');
 const notify = require('./notify-server');
 
 const DEV = process.argv.includes('--dev');
-const CHAR_DIR = path.join(__dirname, '..', 'characters');
+
+/**
+ * 캐릭터는 두 곳에서 읽는다.
+ *  1) 앱에 동봉된 것 — 자체 제작 기본 캐릭터
+ *  2) 사용자가 넣은 것 — %APPDATA%/deskpet/characters
+ * 패키징하면 앱 내부는 asar 안이라 손댈 수 없으므로, 캐릭터를 추가하려면
+ * 2번이 필요하다. 같은 이름이면 사용자 쪽이 이긴다.
+ */
+const BUNDLED_CHAR_DIR = path.join(__dirname, '..', 'characters');
+const userCharDir = () => path.join(app.getPath('userData'), 'characters');
+const charDirs = () => [userCharDir(), BUNDLED_CHAR_DIR];
+
+/** Spine 런타임도 동봉본 → 사용자 폴더 순으로 찾는다 */
+function spineRuntimePath() {
+  const candidates = [
+    path.join(app.getPath('userData'), 'vendor', 'spine', 'spine-webgl.js'),
+    path.join(__dirname, '..', 'vendor', 'spine', 'spine-webgl.js'),
+  ];
+  return candidates.find((p) => fs.existsSync(p)) || null;
+}
 
 /** --character=이름 으로 지정, 없으면 저장된 설정 → 설치된 첫 캐릭터 */
 const argChar = (process.argv.find((a) => a.startsWith('--character=')) || '').split('=')[1];
 let currentCharacter = argChar || null;
 
-function listCharacters() {
-  try {
-    return fs.readdirSync(CHAR_DIR, { withFileTypes: true })
-      .filter((e) => e.isDirectory() && fs.existsSync(path.join(CHAR_DIR, e.name, 'character.json')))
-      .map((e) => {
-        const m = JSON.parse(fs.readFileSync(path.join(CHAR_DIR, e.name, 'character.json'), 'utf8'));
-        return { id: e.name, name: m.name || e.name, renderer: m.renderer || 'parts' };
-      });
-  } catch {
-    return [];
+/** 캐릭터 폴더의 실제 경로를 찾는다 (사용자 폴더 우선) */
+function charPath(id) {
+  for (const base of charDirs()) {
+    const p = path.join(base, id);
+    if (fs.existsSync(path.join(p, 'character.json'))) return p;
   }
+  return null;
+}
+
+function listCharacters() {
+  const seen = new Map();
+  for (const base of charDirs()) {
+    let entries = [];
+    try {
+      entries = fs.readdirSync(base, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const e of entries) {
+      if (!e.isDirectory() || seen.has(e.name)) continue;
+      const f = path.join(base, e.name, 'character.json');
+      if (!fs.existsSync(f)) continue;
+      try {
+        const m = JSON.parse(fs.readFileSync(f, 'utf8'));
+        seen.set(e.name, { id: e.name, name: m.name || e.name, renderer: m.renderer || 'parts' });
+      } catch { /* 깨진 매니페스트는 건너뛴다 */ }
+    }
+  }
+  return [...seen.values()];
 }
 
 /**
@@ -37,7 +75,8 @@ const SIZES = [
 const sizeScale = () => settings.load().sizeScale || 1;
 
 function loadCharacter(id) {
-  const dir = path.join(CHAR_DIR, id);
+  const dir = charPath(id);
+  if (!dir) throw new Error('캐릭터를 찾을 수 없다: ' + id);
   const manifest = JSON.parse(fs.readFileSync(path.join(dir, 'character.json'), 'utf8'));
   const out = { id, ...manifest, files: {} };
   out.height = Math.round((manifest.height || 150) * sizeScale());
@@ -299,8 +338,17 @@ ipcMain.handle('reminders:remove', (_e, id) => {
   settings.save({ reminders: list });
   return list;
 });
+ipcMain.handle('settings:setChat', (_e, v) => settings.save({ chatter: !!v }));
 ipcMain.on('app:quit', () => app.quit());
 ipcMain.handle('character:list', () => listCharacters());
+ipcMain.handle('spine:path', () => {
+  const p = spineRuntimePath();
+  return p ? pathToFileURL(p).href : null;
+});
+ipcMain.handle('paths:get', () => ({
+  userCharacters: userCharDir(),
+  userData: app.getPath('userData'),
+}));
 ipcMain.handle('character:load', (_e, id) => {
   const list = listCharacters();
   const want = id || currentCharacter || (list[0] && list[0].id);
