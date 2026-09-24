@@ -201,12 +201,14 @@ function createWindow() {
   win.on('closed', () => { win = null; });
 }
 
-function createTray() {
-  const icon = nativeImage.createFromPath(path.join(__dirname, '..', 'assets', 'tray.png'));
-  tray = new Tray(icon);
-  tray.setToolTip('DeskPet');
+/**
+ * 트레이 메뉴는 열 때마다 새로 만든다.
+ * 한 번 만들어 두면 좌클릭 메뉴로 캐릭터·크기를 바꿔도 체크 표시가 그대로 남고,
+ * 사용자 폴더에 새로 넣은 캐릭터도 재시작 전까지 목록에 안 뜬다.
+ */
+function buildTrayMenu() {
   const chars = listCharacters();
-  tray.setContextMenu(Menu.buildFromTemplate([
+  return Menu.buildFromTemplate([
     {
       label: '캐릭터',
       submenu: chars.map((c) => ({
@@ -235,12 +237,22 @@ function createTray() {
     { type: 'separator' },
     { label: '가운데로 불러오기', click: () => win?.webContents.send('pet:command', 'recall') },
     { label: '깨우기', click: () => win?.webContents.send('pet:command', 'wake') },
-    { label: '다음 오퍼레이터', click: () => win?.webContents.send('pet:command', 'next') },
+    { label: '다음 캐릭터', click: () => win?.webContents.send('pet:command', 'next') },
     { type: 'separator' },
     { label: '개발자 도구', click: () => win?.webContents.openDevTools({ mode: 'detach' }) },
     { type: 'separator' },
     { label: '종료', click: () => { app.quit(); } },
-  ]));
+  ]);
+}
+
+function createTray() {
+  const icon = nativeImage.createFromPath(path.join(__dirname, '..', 'assets', 'tray.png'));
+  tray = new Tray(icon);
+  tray.setToolTip('DeskPet');
+  // setContextMenu 대신 열 때마다 최신 상태로 띄운다
+  const popup = () => tray.popUpContextMenu(buildTrayMenu());
+  tray.on('right-click', popup);
+  tray.on('click', popup);
 }
 
 /**

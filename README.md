@@ -137,7 +137,7 @@ Canvas가 아니라 **WebGL** 백엔드를 쓴다. spine-ts의 Canvas 백엔드�
 - 설정(캐릭터 · 크기 · 리마인더)이 재시작 후에도 유지된다
 - **혼잣말** — 상태·시간대에 맞춰 가끔 말을 건다 (메뉴에서 끌 수 있음)
 - 자면 `zzz` 가 떠오름 (자체 파츠 캐릭터)
-- 트레이 메뉴: 캐릭터 / 크기 / 가운데로 불러오기 / 깨우기 / 다음 오퍼레이터 / 종료
+- 트레이 메뉴: 캐릭터 / 크기 / 가운데로 불러오기 / 깨우기 / 다음 캐릭터 / 종료 (열 때마다 최신 목록)
 - 해상도·작업 표시줄 변경 시 바닥선 자동 재계산
 - 중복 실행 방지
 
@@ -145,17 +145,30 @@ Canvas가 아니라 **WebGL** 백엔드를 쓴다. spine-ts의 Canvas 백엔드�
 
 ```
 src/
-  main.js                  Electron 메인 — 창 생성, 클릭 통과 토글, 트레이, 무대 계산
+  main.js                  Electron 메인 — 창 생성, 클릭 통과 토글, 트레이, 캐릭터 로드, 리마인더
+  settings.js              설정 저장 (userData/settings.json)
+  notify-server.js         127.0.0.1 전용 알림 서버 — 외부에서 말 시키기
   preload.js               contextBridge (petAPI)
   renderer/
     index.html
     style.css              배경은 반드시 transparent
-    character.js           캐릭터 리그 — 파츠 정의 · 포즈 · 그리기
-    pet.js                 상태머신 · 물리 · 마우스 · 렌더 루프
+    pet.js                 상태머신 · 물리 · 마우스 · 렌더 루프 (뷰 종류를 모른다)
+    character.js           자체 파츠 리그 — 파츠 정의 · 포즈 · IK · 그리기
+    ui.js                  말풍선 · 좌클릭 메뉴
+    chatter.js             혼잣말 (상태·시간대별 대사)
+    renderers/
+      parts-view.js        파츠 리그 뷰 (Canvas 2D)
+      spine-view.js        Spine 3.8 뷰 (WebGL)
+characters/
+  default/                 자체 제작 캐릭터 — 저장소에 들어가는 유일한 캐릭터
+site/                      GitHub Pages 다운로드 페이지 (파츠 리그 데모 포함)
 tools/
+  say.js                   알림 서버에 말 보내기 (앱이 꺼져 있으면 조용히 무시)
+  fetch-spine.js           Spine 3.8 런타임 받기
   gen-icon.js              의존성 없는 PNG 인코더 (트레이 아이콘 생성)
+  ak-scan.js · ab-probe.js · check-pma.js   에셋 조사용 개발 도구
 assets/
-  tray.png                 생성물
+  icon.png · tray.png      생성물
 ```
 
 ### 왜 파츠 분리 방식인가

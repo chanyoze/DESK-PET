@@ -306,8 +306,7 @@
   async function onMenuAction(value) {
     const [kind, arg] = [value.slice(0, value.indexOf(':')), value.slice(value.indexOf(':') + 1)];
     if (kind === 'char') {
-      await switchTo(arg);
-      window.petAPI.setCharacter(arg);
+      await switchTo(arg);      // 저장은 switchTo 가 한다
     } else if (kind === 'size') {
       window.petAPI.setSize(parseFloat(arg));   // 메인이 창을 새로고침한다
     } else if (kind === 'remind') {
@@ -409,9 +408,13 @@
     if (tapped) {
       // 짧게 클릭하면 메뉴를 연다 (캐릭터 교체·크기·리마인더가 여기 모여 있다)
       S.vx = 0; S.vy = 0;
-      buildMenu();
-      menu.show(S.x, S.y - (character.height || BASE_H) * 0.55, stage);
-      syncInteractive(true);
+      // 열 때마다 목록을 다시 읽는다 — 실행 중에 넣은 캐릭터도 바로 보이게
+      window.petAPI.listCharacters().then((list) => {
+        roster = list;
+        buildMenu();
+        menu.show(S.x, S.y - (character.height || BASE_H) * 0.55, stage);
+        syncInteractive(true);
+      });
     } else {
       S.vx = clamp(S.vx, -THROW_MAX, THROW_MAX);
       S.vy = clamp(S.vy, -THROW_MAX, THROW_MAX);
@@ -513,6 +516,8 @@
       setState('pet', 1.6);         // 등장 인사
       view.play(animFor('pet'));
       console.log('[pet] 교체:', from, '→', character.name);
+      // 트레이의 '다음 캐릭터'로 바꿔도 저장돼야 재시작·새로고침 후에 되돌아가지 않는다
+      window.petAPI.setCharacter(character.id);
     } catch (e) {
       console.error('교체 실패:', e && e.stack ? e.stack : e);
     } finally {
