@@ -3,6 +3,9 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('petAPI', {
   /** 무대(화면 크기·바닥선) 정보를 가져온다 */
   getStage: () => ipcRenderer.invoke('stage:get'),
+  /** 모니터 목록 [{id, label, current}] 과 옮기기 (id 또는 'cursor') */
+  listDisplays: () => ipcRenderer.invoke('display:list'),
+  setDisplay: (id) => ipcRenderer.invoke('display:set', id),
   /** 설치된 캐릭터 목록 */
   listCharacters: () => ipcRenderer.invoke('character:list'),
   /** 캐릭터 매니페스트 + 에셋(스켈레톤/아틀라스/텍스처)을 통째로 받는다 */

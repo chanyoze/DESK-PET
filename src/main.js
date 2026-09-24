@@ -55,11 +55,13 @@ function listCharacters() {
       if (!fs.existsSync(f)) continue;
       try {
         const m = JSON.parse(fs.readFileSync(f, 'utf8'));
+        // "hidden": true 인 캐릭터는 목록에서 뺀다 (지우지 않고 잠시 치워 둘 때)
+        if (m.hidden) { seen.set(e.name, null); continue; }
         seen.set(e.name, { id: e.name, name: m.name || e.name, renderer: m.renderer || 'parts' });
       } catch { /* 깨진 매니페스트는 건너뛴다 */ }
     }
   }
-  return [...seen.values()];
+  return [...seen.values()].filter(Boolean);
 }
 
 /**
@@ -119,9 +121,48 @@ let win = null;
 /** @type {Tray|null} */
 let tray = null;
 
-/** 캐릭터가 서 있을 무대(= 주 모니터 전체) 정보를 계산한다. */
+/**
+ * 캐릭터가 돌아다닐 모니터.
+ * 설정의 display(모니터 id)를 쓰고, 그 모니터가 빠졌으면 주 모니터로 돌아간다.
+ */
+function targetDisplay() {
+  const id = settings.load().display;
+  return screen.getAllDisplays().find((d) => d.id === id) || screen.getPrimaryDisplay();
+}
+
+/**
+ * 모니터 목록 — 왼쪽부터 번호를 붙인다.
+ * 윈도우 설정의 "1 · 2 · 3" 번호는 앱에서 알 수 없어서, 위치와 해상도로 구분하게 한다.
+ */
+function displayList() {
+  const primary = screen.getPrimaryDisplay().id;
+  const cur = targetDisplay().id;
+  return screen.getAllDisplays()
+    .slice()
+    .sort((a, b) => a.bounds.x - b.bounds.x || a.bounds.y - b.bounds.y)
+    .map((d, i) => ({
+      id: d.id,
+      label: '모니터 ' + (i + 1) + ' · ' + (d.label ? d.label + ' · ' : '') + Math.round(d.size.width * d.scaleFactor) + '×' +
+        Math.round(d.size.height * d.scaleFactor) + (d.id === primary ? ' (주)' : ''),
+      current: d.id === cur,
+    }));
+}
+
+/** 창을 다른 모니터로 옮기고 펫들을 그쪽 가운데에 다시 떨어뜨린다 */
+function moveToDisplay(id) {
+  const d = screen.getAllDisplays().find((x) => x.id === id);
+  if (!d || !win) return;
+  settings.save({ display: d.id });
+  // 배율(DPI)이 다른 모니터로 옮기면 첫 setBounds 는 크기가 어긋날 수 있어서 두 번 맞춘다
+  win.setBounds(d.bounds);
+  win.setBounds(d.bounds);
+  // 캔버스 해상도·무대가 모니터마다 달라서 새로 부팅하는 게 가장 확실하다
+  win.reload();
+}
+
+/** 캐릭터가 서 있을 무대(= 고른 모니터 전체) 정보를 계산한다. */
 function getStage() {
-  const display = screen.getPrimaryDisplay();
+  const display = targetDisplay();
   const { bounds, workArea } = display;
   return {
     // 창은 모니터 전체를 덮으므로, 창 로컬 좌표 = 화면 좌표 - bounds 원점
@@ -136,7 +177,7 @@ function getStage() {
 }
 
 function createWindow() {
-  const { bounds } = screen.getPrimaryDisplay();
+  const { bounds } = targetDisplay();
 
   win = new BrowserWindow({
     x: bounds.x,
@@ -246,6 +287,18 @@ function buildTrayMenu() {
       })),
     },
     { type: 'separator' },
+    {
+      label: '모니터',
+      submenu: displayList().map((d) => ({
+        label: d.label,
+        type: 'radio',
+        checked: d.current,
+        click: () => moveToDisplay(d.id),
+      })).concat([
+        { type: 'separator' },
+        { label: '지금 마우스가 있는 모니터로', click: () => moveToDisplay(screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).id) },
+      ]),
+    },
     { label: '가운데로 불러오기', click: () => win?.webContents.send('pet:command', 'recall') },
     { label: '깨우기', click: () => win?.webContents.send('pet:command', 'wake') },
     { label: '다음 캐릭터', click: () => win?.webContents.send('pet:command', 'next') },
@@ -325,7 +378,7 @@ if (!app.requestSingleInstanceLock()) {
     // 해상도/작업표시줄이 바뀌면 창 크기와 바닥선을 다시 맞춘다
     const resync = () => {
       if (!win) return;
-      const { bounds } = screen.getPrimaryDisplay();
+      const { bounds } = targetDisplay();
       win.setBounds(bounds);
       win.webContents.send('pet:stage', getStage());
     };
@@ -336,6 +389,11 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 ipcMain.handle('stage:get', () => getStage());
+ipcMain.handle('display:list', () => displayList());
+ipcMain.handle('display:set', (_e, id) => {
+  if (id === 'cursor') id = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).id;
+  moveToDisplay(id);
+});
 
 // ── 설정 · 리마인더 ─────────────────────────────────────────
 ipcMain.handle('settings:get', () => {
@@ -380,7 +438,9 @@ ipcMain.handle('paths:get', () => ({
 }));
 ipcMain.handle('character:load', (_e, id) => {
   const list = listCharacters();
-  const want = id || currentCharacter || (list[0] && list[0].id);
+  // 숨긴 캐릭터가 저장돼 있으면 목록의 첫 캐릭터로 대신한다
+  const shown = (x) => x && list.some((c) => c.id === x);
+  const want = (shown(id) && id) || (shown(currentCharacter) && currentCharacter) || (list[0] && list[0].id);
   try {
     return loadCharacter(want);
   } catch (err) {

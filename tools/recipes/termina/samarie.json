@@ -3,17 +3,17 @@
   "game": "Fear & Hunger 2: Termina",
   "mod": "Playable Non-Playables – PRHVL NIGHTS (nexusmods.com/fearandhunger2termina/mods/49)",
   "sheets": {
-    "walk":      { "from": "characters/%apprentice",         "frame": [80, 110], "mod": true },
-    "knees":     { "from": "characters/$characters7",        "frame": [80, 110] },
-    "shy":       { "from": "characters/$dolls1",             "frame": [80, 110] },
-    "scenes":    { "from": "characters/$scenes1",            "frame": [80, 110] },
-    "run":       { "from": "characters/run6",                "frame": [80, 110], "mod": true },
-    "falling":   { "from": "characters/$falling3",           "frame": [80, 110], "mod": true },
-    "getup":     { "from": "characters/$getting_up9",        "frame": [129, 119], "mod": true },
-    "poses":     { "from": "characters/apprentice",          "frame": [80, 110], "mod": true },
-    "prone":     { "from": "characters/%apprentice2",        "frame": [80, 110], "mod": true },
+    "walk": { "from": "characters/%apprentice", "frame": [80, 110], "mod": true },
+    "knees": { "from": "characters/$characters7", "frame": [80, 110] },
+    "shy": { "from": "characters/$dolls1", "frame": [80, 110] },
+    "scenes": { "from": "characters/$scenes1", "frame": [80, 110] },
+    "run": { "from": "characters/run6", "frame": [80, 110], "mod": true },
+    "falling": { "from": "characters/$falling3", "frame": [80, 110], "mod": true },
+    "getup": { "from": "characters/$getting_up9", "frame": [129, 119], "mod": true },
+    "poses": { "from": "characters/apprentice", "frame": [80, 110], "mod": true },
+    "prone": { "from": "characters/%apprentice2", "frame": [80, 110], "mod": true },
     "transform": { "from": "characters/$transform_Samarie1", "frame": [96, 132], "mod": true },
-    "duppel":    { "from": "characters/$Samarie_duppel",     "frame": [80, 110], "mod": true }
+    "duppel": { "from": "characters/$Samarie_duppel", "frame": [80, 110], "mod": true }
   },
   "manifest": {
     "name": "사마리",
@@ -22,34 +22,39 @@
     "walkSpeed": 34,
     "runSpeed": 100,
     "clips": {
-      "idle":    { "sheet": "walk", "frames": [[1, 0]], "bob": 1 },
-      "idle2":   { "sheet": "shy", "fps": 1.5, "frames": [[1, 3], [2, 3], [1, 3]], "bob": 1 },
-      "pose1":   { "sheet": "poses", "fps": 2, "frames": [[1, 0], [1, 1], [1, 2], [1, 3]] },
-      "pose2":   { "sheet": "poses", "fps": 2, "frames": [[4, 0], [4, 1], [4, 2], [4, 3]] },
-      "walk":    { "sheet": "walk", "fps": 6,
-                   "left":  [[0, 1], [1, 1], [2, 1], [1, 1]],
-                   "right": [[0, 2], [1, 2], [2, 2], [1, 2]] },
-      "run":     { "sheet": "run", "fps": 14,
-                   "left":  [[0, 5], [1, 5], [2, 5], [3, 5], [4, 5], [5, 5], [6, 5], [7, 5], [8, 5], [9, 5], [10, 5], [11, 5]],
-                   "right": [[0, 6], [1, 6], [2, 6], [3, 6], [4, 6], [5, 6], [6, 6], [7, 6], [8, 6], [9, 6], [10, 6], [11, 6]] },
-      "sit":     { "sheet": "knees", "fps": 2, "frames": [[0, 0], [1, 0], [2, 0], [1, 0]] },
-      "box":     { "sheet": "poses", "fps": 2, "frames": [[6, 5], [7, 5], [8, 5], [7, 5]] },
-      "sleep":   { "sheet": "knees", "fps": 1, "frames": [[0, 2], [1, 2], [2, 2], [1, 2]], "bob": 1.2 },
+      "idle": { "sheet": "walk", "frames": [[1, 0]], "bob": 1 },
+      "idle2": { "sheet": "shy", "fps": 1.5, "frames": [[1, 3], [2, 3], [1, 3]], "bob": 1 },
+      "pose1": { "sheet": "poses", "fps": 2, "frames": [[1, 0], [1, 1], [1, 2], [1, 3]] },
+      "pose2": { "sheet": "poses", "fps": 2, "frames": [[4, 0], [4, 1], [4, 2], [4, 3]] },
+      "walk": { "sheet": "walk", "fps": 6, "left": [[0, 1], [1, 1], [2, 1], [1, 1]], "right": [[0, 2], [1, 2], [2, 2], [1, 2]] },
+      "run": {
+        "sheet": "run",
+        "fps": 14,
+        "left": [[0, 5], [1, 5], [2, 5], [3, 5], [4, 5], [5, 5], [6, 5], [7, 5], [8, 5], [9, 5], [10, 5], [11, 5]],
+        "right": [[0, 6], [1, 6], [2, 6], [3, 6], [4, 6], [5, 6], [6, 6], [7, 6], [8, 6], [9, 6], [10, 6], [11, 6]]
+      },
+      "sit": { "sheet": "knees", "fps": 2, "frames": [[0, 0], [1, 0], [2, 0], [1, 0]] },
+      "box": { "sheet": "poses", "fps": 2, "frames": [[6, 5], [7, 5], [8, 5], [7, 5]] },
+      "sleep": { "sheet": "knees", "fps": 1, "frames": [[0, 2], [1, 2], [2, 2], [1, 2]], "bob": 1.2 },
       "lieback": { "sheet": "poses", "fps": 1.5, "frames": [[9, 4], [10, 4], [11, 4], [10, 4]] },
-      "prone":   { "sheet": "prone", "fps": 3, "frames": [[6, 0], [7, 0], [8, 0], [9, 0], [10, 0], [11, 0]] },
-      "pet":     { "sheet": "knees", "fps": 3, "frames": [[0, 3], [1, 3], [2, 3], [1, 3]] },
+      "prone": { "sheet": "prone", "fps": 3, "frames": [[6, 0], [7, 0], [8, 0], [9, 0], [10, 0], [11, 0]] },
+      "pet": { "sheet": "knees", "fps": 3, "frames": [[0, 3], [1, 3], [2, 3], [1, 3]] },
       "anguish": { "sheet": "scenes", "frames": [[1, 1]], "bob": 1.4 },
-      "fall":    { "sheet": "falling", "fps": 8, "frames": [[0, 2], [1, 2], [2, 2], [1, 2]] },
-      "getup":   { "sheet": "getup", "fps": 2.5, "frames": [[0, 0], [1, 0], [1, 0], [1, 0], [2, 0], [0, 0]] },
-      "transform": { "sheet": "transform", "fps": 4, "once": true,
-                     "frames": [[0, 0], [1, 0], [2, 0], [0, 1], [1, 1], [2, 1], [0, 2], [1, 2], [2, 2], [0, 3], [1, 3], [2, 3]] },
-      "hug":     { "sheet": "duppel", "fps": 2, "mirror": true, "bob": 0.8, "frames": [[0, 1], [1, 1], [2, 1], [1, 1]] }
+      "fall": { "sheet": "falling", "fps": 8, "frames": [[0, 2], [1, 2], [2, 2], [1, 2]] },
+      "getup": { "sheet": "getup", "fps": 2.5, "frames": [[0, 0], [1, 0], [1, 0], [1, 0], [2, 0], [0, 0]] },
+      "transform": {
+        "sheet": "transform",
+        "fps": 4,
+        "once": true,
+        "frames": [[0, 0], [1, 0], [2, 0], [0, 1], [1, 1], [2, 1], [0, 2], [1, 2], [2, 2], [0, 3], [1, 3], [2, 3]]
+      },
+      "hug": { "sheet": "duppel", "fps": 2, "mirror": true, "bob": 0.8, "frames": [[0, 1], [1, 1], [2, 1], [1, 1]] }
     },
     "hug": {
       "with": "termina-marina",
       "clip": "hug",
-      "lines": ["...따뜻해요", "잠깐만 이렇게 있어요", "무서워서요..."],
-      "partnerLines": ["...갑자기 왜 이래", "알았어, 잠깐만이야", "괜찮아. 여기 있어"]
+      "lines": ["…따, 따뜻해.", "조금만… 이렇게 있을게.", "캬악… 너무 가까워. 아, 아니, 좋아서."],
+      "partnerLines": ["…갑자기 왜 이래.", "알았어, 알았어. 잠깐만이야.", "숨 막혀, 키 큰 애."]
     },
     "animations": {
       "idle": "idle",
@@ -60,13 +65,40 @@
       "sleep": ["sleep", "lieback", "prone"],
       "pet": ["pet", "anguish"],
       "special": ["getup", "transform"],
-      "drag": "fall", "fall": "fall", "climb": "walk"
+      "drag": "fall",
+      "fall": "fall",
+      "climb": "walk"
     },
     "lines": {
-      "idle": ["...", "저, 여기 있어도 돼요?", "인형 못 봤어요?", "조용하네요", "무서운 건... 싫어요"],
-      "walk": ["조금만 걸을게요", "따라가도 돼요?"],
-      "sit": ["여기 앉아 있을게요", "...괜찮아요"],
-      "sleep": ["...zzz", "깨우지 말아 주세요..."]
-    }
+      "idle": ["……물어보면 대답할게.", "말 안 걸면… 나도 안 해.", "조용한 거, 싫지 않아.", "…나, 여기 있어도 되는 거지?", "이런 데는 처음이야. 전부 네모나네.", "마, 마리나는 지금 뭐 할까."],
+      "walk": ["그냥… 걷는 거야.", "발소리 안 나게 걷는 거, 잘해.", "어디든 괜찮아. 조용하기만 하면."],
+      "run": ["기, 기다려…!", "캬악, 넘어질 뻔했어.", "하아, 하아… 달리는 거 오랜만이야."],
+      "sit": ["여긴… 나쁘지 않네.", "무릎 안고 있으면 좀 괜찮아.", "잠깐만 이렇게 있을게."],
+      "sleep": ["…꿈이 조용해.", "……", "음… 마리나…"],
+      "morning": ["아침이야. …오늘도 살아 있네.", "해가 떴어. 눈부셔."],
+      "afternoon": ["오후는 길어. 그래도 괜찮아."],
+      "evening": ["해가 지네. …달 뜨기 전에 들어가자."],
+      "night": ["달이 보여. 커튼 칠까?", "밤은 조용해서 좋아. 좀 무섭지만.", "안 자? …그럼 나도 안 잘래."],
+      "longRun": ["계속 여기 있어도 돼? …고마워.", "오래 같이 있네. 싫지 않아."],
+      "picked": ["E, EEK! 내, 내려줘…!", "캬악!?", "어, 어디 가는 거야…?"],
+      "thrown": ["캬아악—!", "나, 날아…!", "이, 이건 좀 너무해…!"],
+      "landed": ["……붉은 호보다 거칠어.", "괜찮아. 이 정도는 괜찮아.", "아야… 안 울었어."],
+      "petted": ["…이런 건 처음이라, 어떻게 해야 할지…", "캬, 캬악… 아, 아니야. 좋아서 그래.", "조, 조금만 더…"],
+      "woken": ["캬악!? …아, 안 잤어. 눈만 감았어.", "…왜 깨웠어.", "꿈에서 마리나가… 아, 아무것도 아니야."],
+      "together": ["(작게) …오늘도 예쁘다.", "마, 마리나 옆이면 안 무서워.", "…몰래 본 거 아니야. 그냥 보인 거야.", "M, 마리나 가는 쪽으로… 방향이 같을 뿐이야."]
+    },
+    "dialogues": [
+      { "with": "termina-marina", "lines": [["me", "M, 마리나… 저기…"], ["you", "응, 말해. 안 잡아먹어."], ["me", "……다음에 말할게."]] },
+      { "with": "termina-marina", "lines": [["you", "원 그리는 거 도와줄래?"], ["me", "피, 필요하면 내 피로—"], ["you", "분필 있어. 분필."]] },
+      {
+        "with": "termina-marina",
+        "lines": [["me", "호수… 처음 봤어. 이상하지?"], ["you", "하나도 안 이상해. 다음엔 더 예쁜 데 가자. 론돈 근처라든가."], ["me", "나, 나도 가도 돼?"], ["you", "…짐은 네가 들어."]]
+      },
+      { "with": "termina-marina", "lines": [["you", "왜 계속 쳐다봐?"], ["me", "캬악! 아, 안 봤어!"], ["you", "…그래, 안 본 걸로 해 줄게."]] },
+      { "with": "termina-marina", "lines": [["me", "무도회… 가면 쓰고 가는 거."], ["you", "친구로서야, 알았지?"], ["me", "(작게) …그래도 좋아."]] },
+      { "with": "termina-marina", "lines": [["you", "너 키 큰 거 알지? 뒤에 서면 그림자가 나까지 덮어."], ["me", "미, 미안… 쪼그려 있을게."], ["you", "아니, 그러라는 게 아니라…"]] },
+      { "with": "termina-marina", "lines": [["me", "마리나, 사이다 좋아하지."], ["you", "…그걸 어떻게 알아?"], ["me", "그, 그냥… 느낌이야."]] },
+      { "with": "termina-marina", "lines": [["you", "론돈에 가게 차리면 점원 할래? 월급은 없어."], ["me", "할래."], ["you", "…좀 고민하고 대답해."]] }
+    ]
   }
 }

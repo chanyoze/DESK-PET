@@ -67,6 +67,14 @@
       '오래 켜뒀네',
       '아직도 작업 중이야?',
     ],
+    // ── 반응 (react) ──
+    picked: ['어어?', '잠깐, 어디 가?', '내려줘!'],
+    thrown: ['으아악', '너무해!', '날아간다~'],
+    landed: ['아야...', '휴, 살았다', '다음엔 살살 해줘'],
+    petted: ['헤헤', '기분 좋다', '더 해줘'],
+    woken: ['으음... 왜?', '방금 좋은 꿈 꿨는데', '졸려...'],
+    run: ['후다닥', '늦겠다!', '헉헉'],
+    together: ['같이 있으니까 좋다', '심심하진 않네'],
   };
 
   function timeBucket(d) {
@@ -77,27 +85,39 @@
     return 'night';
   }
 
-  const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+  /** 상태 → 대사 묶음 이름 */
+  const BY_STATE = {
+    idle: 'idle', idle2: 'idle', walk: 'walk', run: 'run', approach: 'run',
+    sit: 'sit', sleep: 'sleep', pet: 'idle', special: 'idle',
+  };
 
   class Chatter {
     /**
      * @param opts.say  말풍선을 띄우는 함수
      * @param opts.getState 지금 상태를 돌려주는 함수
      * @param opts.enabled 켜짐 여부를 돌려주는 함수
+     * @param opts.getMode 무장 모드 ('' = 맨손)
+     * @param opts.hasPartner 같이 다니는 상대가 있는지
      */
     constructor(opts) {
       this.say = opts.say;
       this.getState = opts.getState;
       this.enabled = opts.enabled || (() => true);
+      this.getMode = opts.getMode || (() => '');
+      this.hasPartner = opts.hasPartner || (() => false);
       this.lines = null;          // 캐릭터별 대사 (있으면)
       this.startedAt = Date.now();
       this.lastAt = Date.now();
+      this.reactAt = 0;           // 반응 대사 마지막 시각
       this.timeGreeted = null;    // 시간대별 인사는 하루 한 번씩
       this.timer = null;
+      this.bags = {};             // 묶음별로 섞어 둔 순서 — 한 바퀴 돌기 전엔 같은 말을 안 한다
+      this.lastLine = '';
     }
 
     setCharacter(character) {
       this.lines = (character && character.lines) || null;
+      this.bags = {};
     }
 
     pool(key) {
@@ -106,23 +126,56 @@
       return custom && custom.length ? custom : base;
     }
 
+    /**
+     * 묶음에서 하나 꺼낸다. 섞은 순서대로 꺼내고 다 쓰면 다시 섞는다.
+     * 다시 섞을 때 방금 한 말이 맨 앞에 오지 않게 한다.
+     */
+    draw(key) {
+      const pool = this.pool(key);
+      if (!pool.length) return null;
+      let bag = this.bags[key];
+      if (!bag || !bag.length || bag.src !== pool) {
+        bag = pool.slice();
+        for (let i = bag.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [bag[i], bag[j]] = [bag[j], bag[i]];
+        }
+        if (bag.length > 1 && bag[bag.length - 1] === this.lastLine) bag.unshift(bag.pop());
+        bag.src = pool;
+        this.bags[key] = bag;
+      }
+      const line = bag.pop();
+      this.lastLine = line;
+      return line;
+    }
+
+    /** 지금 상황에 맞는 묶음 이름 */
+    contextKey() {
+      const state = this.getState();
+      const mode = this.getMode();
+      // 무기를 들고 있으면 절반은 무기 얘기
+      if (mode && this.pool('armed:' + mode).length && Math.random() < 0.5) return 'armed:' + mode;
+      // 같이 있으면 가끔 상대 얘기 (잘 때는 빼고)
+      if (state !== 'sleep' && this.hasPartner() && this.pool('together').length && Math.random() < 0.3) return 'together';
+      return BY_STATE[state] || 'idle';
+    }
+
     start() {
       const tick = () => {
         this.timer = setTimeout(tick, 20000 + Math.random() * 40000);  // 20~60초마다 판단
         if (!this.enabled()) return;
 
         const state = this.getState();
-        if (state === 'drag' || state === 'fall' || state === 'climb') return;
+        if (['drag', 'fall', 'climb', 'hug', 'hugged'].indexOf(state) >= 0) return;
 
         const now = new Date();
         const bucket = timeBucket(now);
 
-        // 시간대가 바뀌면 인사부터 (하루 한 번)
+        // 시간대가 바뀌면 인사부터 (하루 한 번). 자는 중이면 깨고 나서
         const key = bucket + '@' + now.toDateString();
-        if (this.timeGreeted !== key) {
+        if (this.timeGreeted !== key && state !== 'sleep') {
           this.timeGreeted = key;
-          this.lastAt = Date.now();
-          return this.say({ text: pick(this.pool(bucket)), mood: 'normal' });
+          return this.speak(bucket);
         }
 
         // 너무 자주 떠들지 않게 최소 간격
@@ -131,18 +184,36 @@
 
         // 오래 켜뒀으면 가끔 그 얘기
         const hours = (Date.now() - this.startedAt) / 3600000;
-        if (hours > 3 && Math.random() < 0.25) {
-          this.lastAt = Date.now();
-          return this.say({ text: pick(this.pool('longRun')), mood: 'normal' });
-        }
+        if (hours > 3 && Math.random() < 0.25) return this.speak('longRun');
 
-        const byState = { idle: 'idle', idle2: 'idle', walk: 'walk', sit: 'sit', sleep: 'sleep' };
-        const pool = this.pool(byState[state] || 'idle');
-        if (!pool.length) return;
-        this.lastAt = Date.now();
-        this.say({ text: pick(pool), mood: 'normal' });
+        this.speak(this.contextKey());
       };
       this.timer = setTimeout(tick, 25000);
+    }
+
+    speak(key, mood) {
+      const line = this.draw(key);
+      if (!line) return false;
+      this.lastAt = Date.now();
+      this.say({ text: line, mood: mood || 'normal', quiet: true });
+      return true;
+    }
+
+    /**
+     * 사건에 대한 반응 (집어 들기·던지기·쓰다듬기 등).
+     * 혼잣말 간격과 별개로. 집어 들기→던지기→착지처럼 이어지는 반응은 말풍선이
+     * 순서대로 줄을 서므로, 연타만 막을 만큼(1.2초)만 간격을 둔다.
+     */
+    react(key, chance) {
+      if (!this.enabled()) return false;
+      if (Math.random() > (chance == null ? 1 : chance)) return false;
+      if (Date.now() - this.reactAt < 1200) return false;
+      const line = this.draw(key);
+      if (!line) return false;
+      this.reactAt = Date.now();
+      this.lastAt = Date.now();
+      this.say({ text: line, mood: 'normal', quiet: true, ms: Math.min(4000, 1600 + line.length * 80) });
+      return true;
     }
 
     stop() {
@@ -152,10 +223,7 @@
 
     /** 사용자가 직접 부른 경우 (메뉴의 '말 시키기') */
     prod() {
-      const state = this.getState();
-      const byState = { idle: 'idle', idle2: 'idle', walk: 'walk', sit: 'sit', sleep: 'sleep' };
-      this.lastAt = Date.now();
-      this.say({ text: pick(this.pool(byState[state] || 'idle')), mood: 'normal' });
+      this.speak(this.contextKey());
     }
   }
 

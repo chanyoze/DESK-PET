@@ -145,6 +145,16 @@ Canvas가 아니라 **WebGL** 백엔드를 쓴다. spine-ts의 Canvas 백엔드�
   그 모드일 때는 그 키를, 없는 상태는 평소 동작을 쓴다. 캐릭터별로 저장된다
 - `run` 이 있으면 걷기 대신 가끔 달린다 (`runSpeed`)
 
+**모니터 고르기** — 모니터가 여럿이면 메뉴(캐릭터 클릭 또는 트레이)의 **모니터**에서 돌아다닐 모니터를
+고른다. 왼쪽부터 번호가 붙고 모델 이름·해상도가 함께 나온다. "지금 마우스가 있는 모니터로"를 누르면
+헷갈릴 일이 없다. 고른 모니터가 빠지면 주 모니터로 돌아간다.
+
+**캐릭터 숨기기** — `character.json` 에 `"hidden": true` 를 넣으면 지우지 않고 목록에서만 뺀다.
+
+**대사** — `lines` 는 상태별 혼잣말 외에 반응(`picked` `thrown` `landed` `petted` `woken`),
+`together`, `armed:<모드>` 를 받는다. `dialogues` 를 주면 둘이 같이 있을 때 대화를 주고받는다.
+자세한 건 [docs/TERMINA-CHARACTERS.md](docs/TERMINA-CHARACTERS.md) 의 "대사 구조".
+
 **둘이 같이 다니기** — 캐릭터 메뉴의 **함께 다니기**에서 동료를 한 명 고르면 둘이 같이 돌아다닌다.
 클릭 · 드래그 · 메뉴는 커서 아래 있는 쪽에 적용된다.
 
@@ -351,7 +361,7 @@ IK로 만들어낼 수 있으므로 그쪽에서만 켠다.
 `app.getPath('userData')/settings.json` 에 저장된다.
 
 ```json
-{ "character": "mudrock", "companion": null, "sizeScale": 1, "reminders": [], "notifyPort": 45678 }
+{ "character": "mudrock", "companion": null, "display": null, "sizeScale": 1, "reminders": [], "notifyPort": 45678 }
 ```
 
 ## 개발용 옵션
@@ -365,6 +375,7 @@ npx electron . --start=state:sit      # 특정 상태를 바닥에서 계속 재
 npx electron . --start=clip:transform # 클립 하나를 계속 재생 (sprite 레시피 확인용)
 npx electron . --start=mode:knife     # 무장 모드로 계속 걷기
 npx electron . --start=hug            # 껴안기 바로 보기 (짝이 없으면 저장하지 않고 불러온다)
+npx electron . --start=talk           # 둘의 대화 바로 보기
 npx electron . --character=kaltsit    # 특정 캐릭터로 실행
 npx electron . --shot=out.png,5000    # 창 내용만 PNG로 저장하고 종료
 npx electron . --hitbox               # 클릭 판정 영역을 화면에 표시

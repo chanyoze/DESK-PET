@@ -64,6 +64,7 @@
   let hitboxEl = null;    // --hitbox 디버그 표시
   let roster = [];        // 설치된 캐릭터 목록
   let reminders = [];     // 예약된 리마인더
+  let displays = [];      // 모니터 목록 (메뉴 열 때 갱신)
   let spineLoaded = false;
 
   /** @type {Pet[]} 0 = 주인공, 1 = 동료 */
@@ -128,9 +129,12 @@
       this.chatter = new window.Chatter({
         say: (m) => this.say(m),
         getState: () => this.S.state,
-        // 둘이면 혼잣말이 두 배가 되지 않게 동료는 절반만
-        enabled: () => chatOn && !this.hidden && (this.role === 'main' || Math.random() < 0.5),
+        // 둘이면 혼잣말이 두 배가 되지 않게 동료는 절반만. 둘이 대화 중이면 혼잣말은 쉰다
+        enabled: () => chatOn && !this.hidden && !talk.active && (this.role === 'main' || Math.random() < 0.5),
+        getMode: () => this.mode,
+        hasPartner: () => pets.length > 1,
       });
+      this.thrown = false;           // 던져서 날아가는 중 (착지 반응용)
     }
 
     get id() { return this.character && this.character.id; }
@@ -315,7 +319,11 @@
           S.vx *= 0.7;
         } else {
           S.vy = 0;
-          if (S.state === 'fall') this.setState('idle', rand(1, 2.5));
+          if (S.state === 'fall') {
+            this.setState('idle', rand(1, 2.5));
+            if (this.thrown) this.chatter.react('landed', 0.6);
+            this.thrown = false;
+          }
           if (MOVING.indexOf(S.state) < 0) S.vx *= Math.exp(-9 * dt);
         }
       } else if (S.state !== 'fall' && S.state !== 'pet') {
@@ -505,6 +513,71 @@
   };
 
   // ════════════════════════════════════════════════════════════
+  //  둘의 대화
+  // ════════════════════════════════════════════════════════════
+  /**
+   * 매니페스트 dialogues 로 준다:
+   *   "dialogues": [ { "with": "termina-marina", "lines": [["me", "..."], ["you", "..."]] } ]
+   * me = 이 캐릭터, you = 상대. 둘 다 한가하면 몇 분에 한 번 주고받는다.
+   * 대화 중에는 둘 다 혼잣말을 쉬고, 서 있는 쪽은 말하는 상대를 바라본다.
+   */
+  const BUSY = ['drag', 'fall', 'climb', 'hug', 'hugged', 'sleep', 'approach'];
+  const talk = {
+    active: null,        // { script:[[pet, text]], i, wait }
+    cooldown: rand(60, 120),
+
+    candidates() {
+      if (pets.length < 2) return [];
+      const out = [];
+      for (const a of pets) {
+        const b = pets.find((p) => p !== a);
+        for (const d of (a.character && a.character.dialogues) || []) {
+          if (d.with === b.id && d.lines && d.lines.length) out.push({ a, b, d });
+        }
+      }
+      return out;
+    },
+
+    tick(dt) {
+      if (this.active) return this.step(dt);
+      this.cooldown -= dt;
+      if (this.cooldown > 0 || !chatOn || hug.phase || drag) return;
+      if (pets.some((p) => BUSY.indexOf(p.S.state) >= 0 || p.hidden)) return;
+      const cands = this.candidates();
+      if (!cands.length) return;
+      const c = cands[Math.floor(Math.random() * cands.length)];
+      this.active = {
+        script: c.d.lines.map(([who, text]) => [who === 'you' ? c.b : c.a, text]),
+        i: 0,
+        wait: 0,
+      };
+    },
+
+    step(dt) {
+      const t = this.active;
+      // 도중에 집어 들거나 한쪽이 사라지면 그만둔다
+      if (pets.length < 2 || pets.some((p) => ['drag', 'fall', 'hugged'].indexOf(p.S.state) >= 0)) return this.end();
+      t.wait -= dt;
+      if (t.wait > 0) return;
+      if (t.i >= t.script.length) return this.end();
+      const [who, text] = t.script[t.i++];
+      const other = pets.find((p) => p !== who);
+      // 서 있거나 앉아 있으면 상대 쪽을 본다
+      if (STILL.indexOf(who.S.state) >= 0 && other) who.S.facing = other.S.x > who.S.x ? 1 : -1;
+      const ms = Math.min(5000, 1800 + text.length * 85);
+      who.bubble.say({ text, ms });
+      t.wait = ms / 1000 + 0.35;
+      for (const p of pets) p.chatter.lastAt = Date.now();
+    },
+
+    end() {
+      this.active = null;
+      this.cooldown = rand(150, 300);     // 다음 대화까지 2.5~5분
+      for (const p of pets) p.chatter.lastAt = Date.now();
+    },
+  };
+
+  // ════════════════════════════════════════════════════════════
   //  메뉴
   // ════════════════════════════════════════════════════════════
   const MODE_LABEL = { knife: '칼', shotgun: '산탄총', pistol: '권총' };
@@ -527,6 +600,15 @@
           .map((c) => ({ label: c.name, value: 'comp:' + c.id, checked: !!comp && comp.id === c.id }))),
     });
 
+    // 모니터가 둘 이상일 때만
+    if (displays.length > 1) {
+      sections.push({
+        title: '모니터',
+        items: displays.map((d) => ({ label: d.label, value: 'disp:' + d.id, checked: d.current }))
+          .concat([{ label: '지금 마우스가 있는 모니터로', value: 'disp:cursor' }]),
+      });
+    }
+
     sections.push({
       title: '크기',
       items: [
@@ -539,6 +621,7 @@
     const acts = [{ label: '쓰다듬기', value: 'act:pet' }];
     if (p.view && p.view.has(p.animFor('special'))) acts.push({ label: '특별 동작', value: 'act:special' });
     if (hug.pair() && !hug.phase) acts.push({ label: '껴안기', value: 'act:hug' });
+    if (talk.candidates().length && !talk.active) acts.push({ label: '둘이 얘기하기', value: 'act:talk2' });
     acts.push({ label: '말 시키기', value: 'act:talk' });
     acts.push({ label: '가운데로 부르기', value: 'act:recall' });
     sections.push({ title: '동작', items: acts });
@@ -590,6 +673,8 @@
     } else if (kind === 'mode') {
       p.setMode(arg);
       p.say({ text: arg ? (MODE_LABEL[arg] || arg) + ' 들었어' : '내려놨어', ms: 1800 });
+    } else if (kind === 'disp') {
+      window.petAPI.setDisplay(arg === 'cursor' ? 'cursor' : Number(arg));   // 메인이 옮기고 새로고침한다
     } else if (kind === 'size') {
       window.petAPI.setSize(parseFloat(arg));   // 메인이 창을 새로고침한다
     } else if (kind === 'remind') {
@@ -601,7 +686,8 @@
       reminders = await window.petAPI.removeReminder(arg);
       p.say({ text: '알림 취소했어', ms: 2000 });
     } else if (kind === 'act') {
-      if (arg === 'pet') p.setState('pet', 2.2);
+      if (arg === 'pet') { p.setState('pet', 2.2); p.chatter.react('petted'); }
+      else if (arg === 'talk2') { talk.cooldown = 0; talk.tick(0); }
       else if (arg === 'special') p.setState('special', 3);
       else if (arg === 'hug') { const pr = hug.pair(); if (pr) hug.start(pr[0], pr[1]); }
       else if (arg === 'talk') p.chatter.prod();
@@ -736,6 +822,7 @@
       S.vx = S.vx * 0.4 + ((nx - S.x) / dt) * 0.6;
       S.vy = S.vy * 0.4 + ((ny - S.y) / dt) * 0.6;
       drag.moved += Math.hypot(e.clientX - drag.lx, e.clientY - drag.ly);
+      if (!drag.said && drag.moved > 12) { drag.said = true; drag.pet.chatter.react('picked', 0.5); }
       drag.lx = e.clientX; drag.ly = e.clientY; drag.lt = now;
       S.x = nx; S.y = ny;
       if (Math.abs(S.vx) > 60) S.facing = S.vx > 0 ? 1 : -1;
@@ -759,7 +846,7 @@
     e.preventDefault();
     const S = p.S;
     const now = performance.now();
-    drag = { pet: p, ox: S.x - e.clientX, oy: S.y - e.clientY, t0: now, lt: now, lx: e.clientX, ly: e.clientY, moved: 0 };
+    drag = { pet: p, prev: S.state, ox: S.x - e.clientX, oy: S.y - e.clientY, t0: now, lt: now, lx: e.clientX, ly: e.clientY, moved: 0 };
     S.vx = 0; S.vy = 0;
     S.wall = 0;
     p.setState('drag');
@@ -772,6 +859,7 @@
     const S = p.S;
     const held = performance.now() - drag.t0;
     const tapped = drag.moved < 7 && held < 400;
+    const prev = drag.prev;
     drag = null;
     if (tapped) {
       // 짧게 클릭하면 메뉴를 연다 (캐릭터 교체·크기·리마인더가 여기 모여 있다)
@@ -780,10 +868,12 @@
       S.vx = 0; S.vy = 0;
       S.y = Math.min(S.y, stage.ground);
       p.setState(S.y >= stage.ground - 0.5 ? 'idle' : 'fall', 1e6);
+      if (prev === 'sleep') p.chatter.react('woken', 0.9);
       menuPet = p;
       // 열 때마다 목록을 다시 읽는다 — 실행 중에 넣은 캐릭터도 바로 보이게
-      window.petAPI.listCharacters().then((list) => {
+      Promise.all([window.petAPI.listCharacters(), window.petAPI.listDisplays()]).then(([list, ds]) => {
         roster = list;
+        displays = ds;
         buildMenu(p);
         menu.show(S.x, S.y - p.height * 0.55, stage);
         syncInteractive(true);
@@ -792,6 +882,9 @@
       S.vx = clamp(S.vx, -THROW_MAX, THROW_MAX);
       S.vy = clamp(S.vy, -THROW_MAX, THROW_MAX);
       p.setState('fall');
+      // 세게 던졌을 때만 비명 (살짝 내려놓은 건 아니다)
+      p.thrown = Math.hypot(S.vx, S.vy) > 700;
+      if (p.thrown) p.chatter.react('thrown', 0.85);
     }
     syncInteractive(true);
   });
@@ -810,6 +903,7 @@
     try {
       for (const p of pets) p.update(dt);
       hug.tick(dt);
+      talk.tick(dt);
       for (const p of pets) p.render(dt);
       // 커서는 가만히 있고 캐릭터가 그 밑으로 걸어 들어올 수도 있다. mousemove 때만 판정하면
       // 그동안 클릭이 바탕화면으로 새어 나간다 (크게 설정일수록 빨라서 더 잘 생긴다).
@@ -927,6 +1021,13 @@
       pr[0].S.x = (stage.workLeft + stage.workRight) / 2 - 150;
       pr[1].S.x = (stage.workLeft + stage.workRight) / 2 + 150;
       hug.start(pr[0], pr[1]);
+    } else if (cmd === 'talk') {
+      // 둘의 대화 바로 보기 (--start=talk) — 상대가 없으면 첫 대화의 상대를 불러온다
+      const d = (p.character.dialogues || [])[0];
+      if (!talk.candidates().length && d) await setCompanion(d.with, false);
+      for (const q of pets) { q.S.y = stage.ground; q.S.vy = 0; q.setState('idle', 1e6); }
+      talk.cooldown = 0;
+      talk.tick(0);
     } else if (cmd === 'recall') {
       pets.forEach((q, i) => q.drop((stage.workLeft + stage.workRight) / 2 + i * 180));
     } else if (cmd === 'next') {
