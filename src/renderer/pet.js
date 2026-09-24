@@ -807,6 +807,10 @@
       for (const p of pets) p.update(dt);
       hug.tick(dt);
       for (const p of pets) p.render(dt);
+      // 커서는 가만히 있고 캐릭터가 그 밑으로 걸어 들어올 수도 있다. mousemove 때만 판정하면
+      // 그동안 클릭이 바탕화면으로 새어 나간다 (크게 설정일수록 빨라서 더 잘 생긴다).
+      // 값이 바뀔 때만 IPC를 보내므로 매 프레임 불러도 된다.
+      if (!drag && cursor.x >= 0) syncInteractive(false);
       if (hitboxEl && pets[0] && pets[0].view) {
         const b = pets[0].hitBox();
         hitboxEl.style.transform = `translate3d(${b.x}px,${b.y}px,0)`;
