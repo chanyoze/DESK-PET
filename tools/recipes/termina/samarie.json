@@ -12,7 +12,8 @@
     "getup":     { "from": "characters/$getting_up9",        "frame": [129, 119], "mod": true },
     "poses":     { "from": "characters/apprentice",          "frame": [80, 110], "mod": true },
     "prone":     { "from": "characters/%apprentice2",        "frame": [80, 110], "mod": true },
-    "transform": { "from": "characters/$transform_Samarie1", "frame": [96, 132], "mod": true }
+    "transform": { "from": "characters/$transform_Samarie1", "frame": [96, 132], "mod": true },
+    "duppel":    { "from": "characters/$Samarie_duppel",     "frame": [80, 110], "mod": true }
   },
   "manifest": {
     "name": "사마리",
@@ -41,7 +42,14 @@
       "fall":    { "sheet": "falling", "fps": 8, "frames": [[0, 2], [1, 2], [2, 2], [1, 2]] },
       "getup":   { "sheet": "getup", "fps": 2.5, "frames": [[0, 0], [1, 0], [1, 0], [1, 0], [2, 0], [0, 0]] },
       "transform": { "sheet": "transform", "fps": 4, "once": true,
-                     "frames": [[0, 0], [1, 0], [2, 0], [0, 1], [1, 1], [2, 1], [0, 2], [1, 2], [2, 2], [0, 3], [1, 3], [2, 3]] }
+                     "frames": [[0, 0], [1, 0], [2, 0], [0, 1], [1, 1], [2, 1], [0, 2], [1, 2], [2, 2], [0, 3], [1, 3], [2, 3]] },
+      "hug":     { "sheet": "duppel", "fps": 2, "mirror": true, "bob": 0.8, "frames": [[0, 1], [1, 1], [2, 1], [1, 1]] }
+    },
+    "hug": {
+      "with": "termina-marina",
+      "clip": "hug",
+      "lines": ["...따뜻해요", "잠깐만 이렇게 있어요", "무서워서요..."],
+      "partnerLines": ["...갑자기 왜 이래", "알았어, 잠깐만이야", "괜찮아. 여기 있어"]
     },
     "animations": {
       "idle": "idle",

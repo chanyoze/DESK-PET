@@ -20,6 +20,8 @@ contextBridge.exposeInMainWorld('petAPI', {
   getPaths: () => ipcRenderer.invoke('paths:get'),
   setChat: (v) => ipcRenderer.invoke('settings:setChat', v),
   setMode: (id, m) => ipcRenderer.invoke('settings:setMode', id, m),
+  /** 함께 다닐 동료 (null = 혼자) */
+  setCompanion: (id) => ipcRenderer.invoke('settings:setCompanion', id),
   quit: () => ipcRenderer.send('app:quit'),
 
   // ── 메인 → 렌더러 ──

@@ -11,6 +11,8 @@
  *           frames 만 있으면 정면 그림으로 보고 방향과 무관하게 그린다.
  *           bob: 1 이면 가만히 있는 동작에 숨쉬기를 얹는다 (한 장짜리 대기용).
  *           once: true 면 한 번만 재생하고 마지막 칸에서 멈춘다 (변신 같은 연출).
+ *           mirror: true 면 frames(정면) 클립도 왼쪽을 볼 때 좌우를 뒤집는다 (껴안기처럼
+ *           두 사람이 한 칸에 있는 그림을 둘의 위치에 맞출 때).
  *
  * 발 위치는 칸마다 알파를 훑어서 찾는다. 게임마다 칸 안의 여백이 제각각이라
  * 사람이 맞추면 동작이 바뀔 때마다 캐릭터가 위아래로 튄다.
@@ -100,6 +102,7 @@
           fps: def.fps || 6,
           bob: def.bob || 0,
           once: !!def.once,
+          mirror: !!def.mirror,
           lists,
           baseline: bottom + 1,
           figureH: bottom + 1 - top,
@@ -205,7 +208,7 @@
 
       ctx.imageSmoothingEnabled = this.smooth;
       ctx.imageSmoothingQuality = 'high';
-      ctx.scale(s, s * breathe);
+      ctx.scale(clip.mirror && facing < 0 ? -s : s, s * breathe);
       ctx.drawImage(
         sh.img,
         col * sh.fw, row * sh.fh, sh.fw, sh.fh,

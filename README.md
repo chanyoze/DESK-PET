@@ -145,6 +145,19 @@ Canvas가 아니라 **WebGL** 백엔드를 쓴다. spine-ts의 Canvas 백엔드�
   그 모드일 때는 그 키를, 없는 상태는 평소 동작을 쓴다. 캐릭터별로 저장된다
 - `run` 이 있으면 걷기 대신 가끔 달린다 (`runSpeed`)
 
+**둘이 같이 다니기** — 캐릭터 메뉴의 **함께 다니기**에서 동료를 한 명 고르면 둘이 같이 돌아다닌다.
+클릭 · 드래그 · 메뉴는 커서 아래 있는 쪽에 적용된다.
+
+**껴안기** — 매니페스트에 `hug` 를 주면 그 상대와 같이 있을 때 가끔 다가가서 껴안는다.
+
+```json
+"hug": { "with": "termina-marina", "clip": "hug",
+         "lines": ["...따뜻해요"], "partnerLines": ["...갑자기 왜 이래"] }
+```
+
+`clip` 은 두 사람이 한 칸에 같이 그려진 그림이다 (이쪽이 왼쪽). 껴안는 동안 상대는 숨기고,
+상대가 왼쪽에 있으면 `mirror: true` 클립을 좌우로 뒤집어 그린다.
+
 **RPG Maker MV 게임에서 뽑기** — 레시피(칸 좌표만 적힌 JSON)를 주면 설치된 게임에서 시트를
 풀어 `%APPDATA%/deskpet/characters` 에 캐릭터를 만든다. 레시피 시트에 `"mod": true` 가 붙어
 있으면 `--mod` 로 준 모드 폴더에서 읽는다.
@@ -338,7 +351,7 @@ IK로 만들어낼 수 있으므로 그쪽에서만 켠다.
 `app.getPath('userData')/settings.json` 에 저장된다.
 
 ```json
-{ "character": "mudrock", "sizeScale": 1, "reminders": [], "notifyPort": 45678 }
+{ "character": "mudrock", "companion": null, "sizeScale": 1, "reminders": [], "notifyPort": 45678 }
 ```
 
 ## 개발용 옵션
@@ -351,6 +364,7 @@ npx electron . --start=climbhold      # 벽 타기를 제자리에 고정 (자�
 npx electron . --start=state:sit      # 특정 상태를 바닥에서 계속 재생
 npx electron . --start=clip:transform # 클립 하나를 계속 재생 (sprite 레시피 확인용)
 npx electron . --start=mode:knife     # 무장 모드로 계속 걷기
+npx electron . --start=hug            # 껴안기 바로 보기 (짝이 없으면 저장하지 않고 불러온다)
 npx electron . --character=kaltsit    # 특정 캐릭터로 실행
 npx electron . --shot=out.png,5000    # 창 내용만 PNG로 저장하고 종료
 npx electron . --hitbox               # 클릭 판정 영역을 화면에 표시
