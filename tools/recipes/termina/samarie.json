@@ -1,0 +1,36 @@
+{
+  "id": "termina-samarie",
+  "game": "Fear & Hunger 2: Termina",
+  "sheets": {
+    "walk":  { "from": "characters/%apprentice",  "frame": [80, 110] },
+    "knees": { "from": "characters/$characters7", "frame": [80, 110] },
+    "shy":   { "from": "characters/$dolls1",      "frame": [80, 110] }
+  },
+  "manifest": {
+    "name": "사마리",
+    "renderer": "sprite",
+    "height": 150,
+    "walkSpeed": 34,
+    "clips": {
+      "idle":  { "sheet": "walk", "frames": [[1, 0]], "bob": 1 },
+      "idle2": { "sheet": "shy", "fps": 1.5, "frames": [[1, 3], [2, 3], [1, 3]], "bob": 1 },
+      "walk":  { "sheet": "walk", "fps": 6,
+                 "left":  [[0, 1], [1, 1], [2, 1], [1, 1]],
+                 "right": [[0, 2], [1, 2], [2, 2], [1, 2]] },
+      "sit":   { "sheet": "knees", "fps": 2, "frames": [[0, 0], [1, 0], [2, 0], [1, 0]] },
+      "sleep": { "sheet": "knees", "fps": 1, "frames": [[0, 2], [1, 2], [2, 2], [1, 2]], "bob": 1.2 },
+      "pet":   { "sheet": "knees", "fps": 3, "frames": [[0, 3], [1, 3], [2, 3], [1, 3]] },
+      "fall":  { "sheet": "walk", "fps": 8, "frames": [[0, 0], [2, 0]] }
+    },
+    "animations": {
+      "idle": "idle", "idle2": "idle2", "walk": "walk", "sit": "sit", "sleep": "sleep",
+      "pet": "pet", "drag": "fall", "fall": "fall", "climb": "walk"
+    },
+    "lines": {
+      "idle": ["...", "저, 여기 있어도 돼요?", "인형 못 봤어요?", "조용하네요", "무서운 건... 싫어요"],
+      "walk": ["조금만 걸을게요", "따라가도 돼요?"],
+      "sit": ["여기 앉아 있을게요", "...괜찮아요"],
+      "sleep": ["...zzz", "깨우지 말아 주세요..."]
+    }
+  }
+}

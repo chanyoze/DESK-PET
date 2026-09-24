@@ -474,6 +474,7 @@
       }
       return new window.SpineView().init(next);
     }
+    if (next.renderer === 'sprite') return new window.SpriteView().init(next);
     return new window.PartsView().init(next);
   }
 
@@ -565,10 +566,28 @@
     window.petAPI.onSay(say);
     window.addEventListener('resize', () => view.resize());
     requestAnimationFrame(frame);
+
+    booted = true;
+    if (pendingCmd) runCommand(pendingCmd);
   }
 
+  // 부팅이 끝나기 전에 온 명령(--start= 등)은 부팅 뒤로 미룬다.
+  // 안 그러면 부팅 마지막의 '떨어지며 등장'이 명령을 덮어쓴다.
+  let booted = false;
+  let pendingCmd = null;
   window.petAPI.onCommand((cmd) => {
-    if (cmd === 'recall') {
+    if (booted) runCommand(cmd);
+    else pendingCmd = cmd;
+  });
+
+  function runCommand(cmd) {
+    if (cmd.indexOf('state:') === 0) {
+      // 개발용: 특정 동작을 바닥에서 계속 재생 (--start=state:sit)
+      S.x = (stage.workLeft + stage.workRight) / 2;
+      S.y = stage.ground;
+      S.vx = 0; S.vy = 0;
+      setState(cmd.slice(6), 1e6);
+    } else if (cmd === 'recall') {
       S.x = (stage.workLeft + stage.workRight) / 2;
       S.y = stage.ground - 300;
       S.vx = 0; S.vy = 0;
@@ -586,7 +605,7 @@
       S.vx = 0; S.vy = 0;
       setState('climb', 8);
     }
-  });
+  }
 
   // 디버깅용
   window.__pet = S;

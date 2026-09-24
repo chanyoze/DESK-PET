@@ -1,0 +1,39 @@
+{
+  "id": "termina-marina",
+  "game": "Fear & Hunger 2: Termina",
+  "sheets": {
+    "walk":    { "from": "characters/%occultist",      "frame": [80, 110] },
+    "rest":    { "from": "characters/sleeping1",       "frame": [80, 110] },
+    "crouch":  { "from": "characters/$special_poses8", "frame": [80, 110] },
+    "falling": { "from": "characters/$falling1",       "frame": [80, 110] },
+    "getup":   { "from": "characters/$getting_up2",    "frame": [129, 119] }
+  },
+  "manifest": {
+    "name": "마리나",
+    "renderer": "sprite",
+    "height": 160,
+    "walkSpeed": 40,
+    "clips": {
+      "idle":    { "sheet": "walk", "frames": [[1, 0]], "bob": 1 },
+      "idle2":   { "sheet": "walk", "frames": [[4, 0]], "bob": 1 },
+      "walk":    { "sheet": "walk", "fps": 6,
+                   "left":  [[0, 1], [1, 1], [2, 1], [1, 1]],
+                   "right": [[0, 2], [1, 2], [2, 2], [1, 2]] },
+      "sit":     { "sheet": "rest", "frames": [[6, 0]], "bob": 0.6 },
+      "sleep":   { "sheet": "rest", "frames": [[1, 1]], "bob": 1.6 },
+      "pet":     { "sheet": "crouch", "fps": 2, "frames": [[1, 1], [2, 1]] },
+      "fall":    { "sheet": "falling", "fps": 8, "frames": [[0, 2], [1, 2], [2, 2], [1, 2]] },
+      "special": { "sheet": "getup", "fps": 2.5, "frames": [[0, 0], [1, 0], [1, 0], [1, 0], [2, 0], [0, 0]] }
+    },
+    "animations": {
+      "idle": "idle", "idle2": "idle2", "walk": "walk", "sit": "sit", "sleep": "sleep",
+      "pet": "pet", "special": "special", "drag": "fall", "fall": "fall", "climb": "walk"
+    },
+    "lines": {
+      "idle": ["...뭘 봐", "책 읽는 중이야. 조용히 해", "여기서 나갈 방법이나 찾자", "기분 나쁜 날씨네", "너도 잠 못 잤지?"],
+      "walk": ["따라오지 마", "그냥 둘러보는 거야", "발 조심해"],
+      "sit": ["잠깐만 쉬자", "다리가 후들거려"],
+      "sleep": ["...", "깨우면 가만 안 둬"]
+    }
+  }
+}

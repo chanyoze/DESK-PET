@@ -64,12 +64,13 @@ npm run icon         # 트레이 아이콘 재생성
 
 ## 캐릭터 — 코드는 공개, 에셋은 각자 (BYOA)
 
-`characters/<이름>/character.json` 하나가 캐릭터 하나다. 렌더러가 두 종류다.
+`characters/<이름>/character.json` 하나가 캐릭터 하나다. 렌더러가 세 종류다.
 
 | renderer | 무엇 | 에셋 |
 |---|---|---|
 | `parts` | 자체 파츠 리그 (코드로 그림) | 필요 없음 — 저장소에 포함 |
 | `spine` | Spine 2D 스켈레톤 | `.skel` + `.atlas` + `.png` — **각자 준비** |
+| `sprite` | 2D 스프라이트 시트 (RPG Maker 등) | 시트 `.png` — **각자 준비** |
 
 ```json
 {
@@ -108,6 +109,42 @@ npm run fetch-spine     # vendor/spine/spine-webgl.js 를 받는다
 
 Canvas가 아니라 **WebGL** 백엔드를 쓴다. spine-ts의 Canvas 백엔드는 메시 어태치먼트를
 지원하지 않아서, 옷자락·머리카락에 메시를 쓰는 스켈레톤이 깨진다.
+
+### 스프라이트 시트 (`sprite`)
+
+뼈대 없이 칸을 넘기는 2D 게임 캐릭터용이다. 동작은 "어느 시트의 몇 번째 칸을 어떤 순서로"가 전부다.
+
+```json
+{
+  "name": "마리나",
+  "renderer": "sprite",
+  "height": 160,
+  "sheets": { "walk": { "file": "walk.png", "frame": [80, 110] } },
+  "clips": {
+    "idle": { "sheet": "walk", "frames": [[1, 0]], "bob": 1 },
+    "walk": { "sheet": "walk", "fps": 6,
+              "left":  [[0, 1], [1, 1], [2, 1], [1, 1]],
+              "right": [[0, 2], [1, 2], [2, 2], [1, 2]] }
+  },
+  "animations": { "idle": "idle", "walk": "walk" }
+}
+```
+
+- 칸 좌표는 `[열, 행]`. 좌우 그림이 따로 있으면 `left`/`right`, 정면 그림이면 `frames`
+- **발 위치는 알파를 훑어서 자동으로 잡는다** — 칸마다 여백이 달라도 동작이 바뀔 때 튀지 않는다
+- `height` 는 대기 자세의 실제 그림 높이 기준 (Spine·파츠와 같은 뜻)
+- 게임 에셋엔 대기 모션이 없어서 `bob` 으로 숨쉬기를 얹는다
+- `idle` 클립은 필수
+
+**RPG Maker MV 게임에서 뽑기** — 레시피(칸 좌표만 적힌 JSON)를 주면 설치된 게임에서 시트를
+풀어 `%APPDATA%/deskpet/characters` 에 캐릭터를 만든다.
+
+```bash
+npm run extract-rpgmv -- "<게임 폴더>" tools/recipes/termina/marina.json
+```
+
+피어 앤 헝거 2: 테르미나의 마리나·사마리 레시피가 들어 있다. 조사 기록은
+[docs/TERMINA-PROBE.md](docs/TERMINA-PROBE.md).
 
 ### 화질
 
@@ -159,12 +196,14 @@ src/
     renderers/
       parts-view.js        파츠 리그 뷰 (Canvas 2D)
       spine-view.js        Spine 3.8 뷰 (WebGL)
+      sprite-view.js       스프라이트 시트 뷰 (Canvas 2D)
 characters/
   default/                 자체 제작 캐릭터 — 저장소에 들어가는 유일한 캐릭터
 site/                      GitHub Pages 다운로드 페이지 (파츠 리그 데모 포함)
 tools/
   say.js                   알림 서버에 말 보내기 (앱이 꺼져 있으면 조용히 무시)
   fetch-spine.js           Spine 3.8 런타임 받기
+  rpgmv-extract.js         RPG Maker MV 게임에서 캐릭터 시트 뽑기 (레시피: tools/recipes/)
   gen-icon.js              의존성 없는 PNG 인코더 (트레이 아이콘 생성)
   ak-scan.js · ab-probe.js · check-pma.js   에셋 조사용 개발 도구
 assets/
@@ -298,6 +337,7 @@ npx electron . --dev                  # 개발자 도구
 npx electron . --trace                # 상태값(위치·속도·상태)을 터미널에 출력
 npx electron . --start=climb          # 실행하자마자 벽 타기
 npx electron . --start=climbhold      # 벽 타기를 제자리에 고정 (자세 확인용)
+npx electron . --start=state:sit      # 특정 동작을 바닥에서 계속 재생 (sprite 레시피 확인용)
 npx electron . --character=kaltsit    # 특정 캐릭터로 실행
 npx electron . --shot=out.png,5000    # 창 내용만 PNG로 저장하고 종료
 npx electron . --hitbox               # 클릭 판정 영역을 화면에 표시

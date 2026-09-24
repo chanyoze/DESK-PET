@@ -100,6 +100,17 @@ function loadCharacter(id) {
       }
     }
   }
+  if (manifest.renderer === 'sprite') {
+    // 시트 이미지를 data URL 로 (시트 이름 → 이미지)
+    out.files.sheets = {};
+    for (const [name, def] of Object.entries(manifest.sheets || {})) {
+      const p = path.join(dir, def.file);
+      if (!fs.existsSync(p)) continue;
+      const ext = path.extname(def.file).slice(1).toLowerCase();
+      out.files.sheets[name] =
+        `data:image/${ext === 'jpg' ? 'jpeg' : ext};base64,` + fs.readFileSync(p).toString('base64');
+    }
+  }
   return out;
 }
 
@@ -212,7 +223,7 @@ function buildTrayMenu() {
     {
       label: '캐릭터',
       submenu: chars.map((c) => ({
-        label: c.name + (c.renderer === 'spine' ? '' : ' (파츠)'),
+        label: c.name + (c.renderer === 'parts' ? ' (파츠)' : ''),
         type: 'radio',
         checked: c.id === currentCharacter,
         click: () => {
