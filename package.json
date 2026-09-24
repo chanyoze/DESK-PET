@@ -1,6 +1,6 @@
 {
   "name": "deskpet",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "description": "바탕화면을 돌아다니는 데스크톱 마스코트",
   "main": "src/main.js",
   "scripts": {

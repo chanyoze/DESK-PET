@@ -22,6 +22,8 @@ contextBridge.exposeInMainWorld('petAPI', {
   getSpinePath: () => ipcRenderer.invoke('spine:path'),
   getPaths: () => ipcRenderer.invoke('paths:get'),
   setChat: (v) => ipcRenderer.invoke('settings:setChat', v),
+  /** 분위기 'light' | 'dark' */
+  setTone: (v) => ipcRenderer.invoke('settings:setTone', v),
   setMode: (id, m) => ipcRenderer.invoke('settings:setMode', id, m),
   /** 함께 다닐 동료 (null = 혼자) */
   setCompanion: (id) => ipcRenderer.invoke('settings:setCompanion', id),

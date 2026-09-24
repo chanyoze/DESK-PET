@@ -12,6 +12,7 @@ const DEFAULTS = {
   character: null,     // null = 설치된 첫 캐릭터
   companion: null,     // 함께 다닐 두 번째 캐릭터 (null = 혼자)
   display: null,       // 돌아다닐 모니터 id (null = 주 모니터)
+  tone: 'light',       // 분위기: light 가볍게 / dark 원작처럼
   sizeScale: 1,
   reminders: [],       // { id, text, at: "HH:MM" | epoch ms, repeat: "daily"|null, done }
   notifyPort: 45678,

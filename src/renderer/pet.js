@@ -40,9 +40,12 @@
     climb: 'Move',
   };
 
-  const STILL = ['idle', 'idle2', 'sit', 'sleep', 'pet', 'special', 'hug', 'hugged'];
-  const MOVING = ['walk', 'run', 'approach'];
-  const RESTING = ['idle', 'idle2', 'walk', 'run', 'sit', 'sleep', 'pet', 'special', 'hug'];
+  const STILL = ['idle', 'idle2', 'sit', 'sleep', 'pet', 'special', 'hug', 'hugged', 'down', 'recover', 'bloodcast', 'vanish'];
+  const MOVING = ['walk', 'run', 'approach', 'nightmare'];
+  const RESTING = ['idle', 'idle2', 'walk', 'run', 'sit', 'sleep', 'pet', 'special', 'hug',
+    'down', 'recover', 'nightmare', 'bloodcast'];
+  /** 원작처럼 분위기에서만 나오는 상태 — 끝나면 정해진 다음 상태로 간다 */
+  const DARK_NEXT = { down: 'recover', nightmare: 'recover', recover: 'idle' };
   /** 껴안기를 시작해도 되는 상태 — 자거나 연출 중이면 방해하지 않는다 */
   const HUGGABLE = ['idle', 'idle2', 'walk', 'run', 'sit'];
 
@@ -61,6 +64,12 @@
   let menuPet = null;     // 메뉴를 연 펫
   let chatOn = true;      // 혼잣말 켜짐 (설정에 저장)
   let modeByChar = {};    // 캐릭터별 무장 모드 (설정에 저장)
+  /**
+   * 분위기 — 'light' 가볍게 / 'dark' 원작처럼.
+   * 원작처럼이면 어두운 대사(linesDark · dialoguesDark)가 섞이고, 악몽 · 쓰러짐 ·
+   * 붉은 호 순간이동이 드물게 나온다. 매니페스트에 없는 캐릭터는 달라지지 않는다.
+   */
+  let tone = 'light';
   let hitboxEl = null;    // --hitbox 디버그 표시
   let roster = [];        // 설치된 캐릭터 목록
   let reminders = [];     // 예약된 리마인더
@@ -132,6 +141,7 @@
         // 둘이면 혼잣말이 두 배가 되지 않게 동료는 절반만. 둘이 대화 중이면 혼잣말은 쉰다
         enabled: () => chatOn && !this.hidden && !talk.active && (this.role === 'main' || Math.random() < 0.5),
         getMode: () => this.mode,
+        getTone: () => tone,
         hasPartner: () => pets.length > 1,
       });
       this.thrown = false;           // 던져서 날아가는 중 (착지 반응용)
@@ -178,6 +188,7 @@
       const map = (this.character && this.character.animations) || {};
       if (state === 'approach') state = this.canRun() ? 'run' : 'walk';
       if (state === 'hugged') state = 'idle';
+      if (state === 'vanish') state = 'idle';
       let v = (this.mode && map[state + '@' + this.mode]) || map[state] || DEFAULT_ANIM[state] || state;
       // 배열이면 변형 풀 — 이 상태에 들어갈 때마다 하나를 고른다
       if (Array.isArray(v)) {
@@ -186,6 +197,12 @@
         v = pool[Math.floor(Math.random() * pool.length)];
       }
       return v;
+    }
+
+    /** 매니페스트에 이 상태용 동작이 있는지 (DEFAULT_ANIM 으로 떨어지는 건 제외) */
+    has(state) {
+      const map = (this.character && this.character.animations) || {};
+      return !!map[state];
     }
 
     /** 달리기는 전용 동작이 있을 때만. 무장 중엔 그 모드용 달리기가 있어야 한다 */
@@ -199,7 +216,9 @@
       const S = this.S;
       if (S.state !== name) {
         S.state = name;
-        if (this.view) this.view.play(this.animFor(name));
+        const anim = this.animFor(name);
+        if (this.view) this.view.play(anim);
+        if (anim === 'transform') this.chatter.react('transform', 1);
       }
       S.until = dur == null ? 0 : dur;
       if (STILL.indexOf(name) >= 0) S.vx = 0;
@@ -280,12 +299,18 @@
       if (S.state === 'drag') return;   // 위치는 mousemove가 직접 옮긴다
       if (S.state === 'climb') return this.updateClimb(dt);
       if (S.state === 'hugged') return; // 껴안긴 동안은 상대가 둘 다 그린다
+      if (S.state === 'vanish') {       // 붉은 호로 사라진 동안
+        S.until -= dt;
+        if (S.until <= 0) dark.reappear(this);
+        return;
+      }
 
       const airborne = S.y < stage.ground - 0.5 || Math.abs(S.vy) > 1;
       if (airborne) S.vy += this.GRAVITY * dt;
       if (S.state === 'walk') S.vx = S.dir * this.WALK_SPEED;
       else if (S.state === 'run') S.vx = S.dir * this.RUN_SPEED;
       else if (S.state === 'approach') S.vx = S.dir * (this.canRun() ? this.RUN_SPEED : this.WALK_SPEED * 1.3);
+      else if (S.state === 'nightmare') S.vx = S.dir * this.WALK_SPEED * 0.3;   // 피 흘리며 천천히 기어간다
 
       S.x += S.vx * dt;
       S.y += S.vy * dt;
@@ -320,9 +345,16 @@
         } else {
           S.vy = 0;
           if (S.state === 'fall') {
-            this.setState('idle', rand(1, 2.5));
-            if (this.thrown) this.chatter.react('landed', 0.6);
+            // 원작처럼: 아주 세게 던지면 가끔 쓰러졌다가 일어난다
+            if (this.hardThrow && tone === 'dark' && this.has('down') && Math.random() < 0.3) {
+              this.setState('down', rand(2.5, 4));
+              this.chatter.react('down', 1);
+            } else {
+              this.setState('idle', rand(1, 2.5));
+              if (this.thrown) this.chatter.react('landed', 0.6);
+            }
             this.thrown = false;
+            this.hardThrow = false;
           }
           if (MOVING.indexOf(S.state) < 0) S.vx *= Math.exp(-9 * dt);
         }
@@ -339,6 +371,8 @@
         S.until -= dt;
         if (S.until <= 0) {
           if (S.state === 'hug') hug.finish();
+          else if (S.state === 'bloodcast') dark.vanish(this);
+          else if (DARK_NEXT[S.state]) this.setState(DARK_NEXT[S.state], S.state === 'recover' ? rand(1, 2) : 2.4);
           else if (S.state === 'pet') this.setState('idle', rand(1, 2));
           else this.pickNext();
         }
@@ -513,6 +547,86 @@
   };
 
   // ════════════════════════════════════════════════════════════
+  //  원작처럼 — 악몽 · 붉은 호
+  // ════════════════════════════════════════════════════════════
+  /**
+   * 분위기가 '원작처럼'일 때만 돈다. 둘 다 일부러 드물게 했다.
+   *  - 악몽: 새벽 2~5시에만, 평균 30분에 한 번, 같은 펫은 40분 안에 다시 안 나온다.
+   *    피 흘리며 기어가다 주저앉았다 일어난다. (animations.nightmare)
+   *  - 붉은 호: 매니페스트 teleport 가 있는 캐릭터(사마리)만. 평균 10분에 한 번, 7분 쿨다운.
+   *    손을 베고(bloodcast) → 붉은 빛과 함께 사라졌다가 → 다른 자리에 나타난다.
+   *    세게 던졌을 때도 35% 확률로 공중에서 빠져나간다.
+   */
+  const CALM = ['idle', 'idle2', 'walk', 'sit'];
+  const dark = {
+    tick(dt) {
+      if (tone !== 'dark' || hug.phase || talk.active) return;
+      const hour = new Date().getHours();
+      for (const p of pets) {
+        if (CALM.indexOf(p.S.state) < 0 || p.S.vy !== 0 || p.hidden) continue;
+        p.nightmareCd = (p.nightmareCd || 0) - dt;
+        p.teleportCd = (p.teleportCd == null ? rand(180, 300) : p.teleportCd) - dt;
+
+        if (hour >= 2 && hour < 5 && p.has('nightmare') && p.nightmareCd <= 0 && Math.random() < dt / 1800) {
+          p.nightmareCd = 2400;
+          p.S.dir = Math.random() < 0.5 ? -1 : 1;
+          p.setState('nightmare', rand(6, 9));
+          p.chatter.react('nightmare', 1);
+          continue;
+        }
+        if (this.canTeleport(p) && p.teleportCd <= 0 && Math.random() < dt / 600) {
+          p.teleportCd = 420;
+          p.setState(p.has('bloodcast') ? 'bloodcast' : 'idle', p.has('bloodcast') ? 1.8 : 0.1);
+          if (!p.has('bloodcast')) this.vanish(p);
+        }
+      }
+    },
+
+    canTeleport(p) {
+      return tone === 'dark' && !!(p.character && p.character.teleport) && !hug.busy(p);
+    },
+
+    /** 붉은 빛 번쩍 — 사라지는 자리와 나타나는 자리에 */
+    flash(p) {
+      const cfg = (p.character && p.character.teleport) || {};
+      const size = Math.round(p.height * 1.3);
+      const el = document.createElement('div');
+      el.className = 'redarc';
+      el.style.width = el.style.height = size + 'px';
+      el.style.left = (p.S.x - size / 2) + 'px';
+      el.style.top = (p.S.y - p.height * 0.55 - size / 2) + 'px';
+      if (cfg.color) el.style.setProperty('--arc', cfg.color);
+      document.body.appendChild(el);
+      setTimeout(() => el.remove(), 1000);
+    },
+
+    vanish(p) {
+      this.flash(p);
+      p.hidden = true;
+      p.bubble.dismiss();
+      p.S.vx = 0; p.S.vy = 0;
+      p.S.state = 'vanish';
+      p.S.until = rand(0.6, 1.1);
+    },
+
+    reappear(p) {
+      const S = p.S;
+      const L = stage.workLeft + 80, R = stage.workRight - 80;
+      // 원래 자리에서 적어도 250px 떨어진 곳
+      let x = S.x;
+      for (let i = 0; i < 8 && Math.abs(x - S.x) < 250; i++) x = rand(L, R);
+      S.x = x;
+      S.y = stage.ground;
+      S.vx = 0; S.vy = 0;
+      p.hidden = false;
+      p.setState('idle', rand(1.5, 3));
+      p.view.play(p.animFor('idle'));
+      this.flash(p);
+      p.chatter.react('teleport', 0.8);
+    },
+  };
+
+  // ════════════════════════════════════════════════════════════
   //  둘의 대화
   // ════════════════════════════════════════════════════════════
   /**
@@ -521,7 +635,8 @@
    * me = 이 캐릭터, you = 상대. 둘 다 한가하면 몇 분에 한 번 주고받는다.
    * 대화 중에는 둘 다 혼잣말을 쉬고, 서 있는 쪽은 말하는 상대를 바라본다.
    */
-  const BUSY = ['drag', 'fall', 'climb', 'hug', 'hugged', 'sleep', 'approach'];
+  const BUSY = ['drag', 'fall', 'climb', 'hug', 'hugged', 'sleep', 'approach',
+    'down', 'recover', 'nightmare', 'bloodcast', 'vanish'];
   const talk = {
     active: null,        // { script:[[pet, text]], i, wait }
     cooldown: rand(60, 120),
@@ -531,7 +646,9 @@
       const out = [];
       for (const a of pets) {
         const b = pets.find((p) => p !== a);
-        for (const d of (a.character && a.character.dialogues) || []) {
+        const ds = ((a.character && a.character.dialogues) || [])
+          .concat(tone === 'dark' ? (a.character && a.character.dialoguesDark) || [] : []);
+        for (const d of ds) {
           if (d.with === b.id && d.lines && d.lines.length) out.push({ a, b, d });
         }
       }
@@ -626,6 +743,17 @@
     acts.push({ label: '가운데로 부르기', value: 'act:recall' });
     sections.push({ title: '동작', items: acts });
 
+    // 분위기 — 원작처럼 대사가 있는 캐릭터가 하나라도 있을 때만
+    if (pets.some((q) => q.character && (q.character.linesDark || q.character.dialoguesDark))) {
+      sections.push({
+        title: '분위기',
+        items: [
+          { label: '가볍게', value: 'tone:light', checked: tone !== 'dark' },
+          { label: '원작처럼', value: 'tone:dark', checked: tone === 'dark' },
+        ],
+      });
+    }
+
     const modes = modesOf(p.character);
     if (modes.length) {
       sections.push({
@@ -673,6 +801,10 @@
     } else if (kind === 'mode') {
       p.setMode(arg);
       p.say({ text: arg ? (MODE_LABEL[arg] || arg) + ' 들었어' : '내려놨어', ms: 1800 });
+    } else if (kind === 'tone') {
+      tone = arg === 'dark' ? 'dark' : 'light';
+      window.petAPI.setTone(tone);
+      p.say({ text: tone === 'dark' ? '……' : '휴.', ms: 1400, quiet: true });
     } else if (kind === 'disp') {
       window.petAPI.setDisplay(arg === 'cursor' ? 'cursor' : Number(arg));   // 메인이 옮기고 새로고침한다
     } else if (kind === 'size') {
@@ -883,8 +1015,12 @@
       S.vy = clamp(S.vy, -THROW_MAX, THROW_MAX);
       p.setState('fall');
       // 세게 던졌을 때만 비명 (살짝 내려놓은 건 아니다)
-      p.thrown = Math.hypot(S.vx, S.vy) > 700;
-      if (p.thrown) p.chatter.react('thrown', 0.85);
+      const speed = Math.hypot(S.vx, S.vy);
+      p.thrown = speed > 700;
+      p.hardThrow = speed > 1500;
+      // 원작처럼: 사마리는 세게 던지면 가끔 공중에서 붉은 호로 빠져나간다
+      if (speed > 1200 && dark.canTeleport(p) && Math.random() < 0.35) dark.vanish(p);
+      else if (p.thrown) p.chatter.react('thrown', 0.85);
     }
     syncInteractive(true);
   });
@@ -904,6 +1040,7 @@
       for (const p of pets) p.update(dt);
       hug.tick(dt);
       talk.tick(dt);
+      dark.tick(dt);
       for (const p of pets) p.render(dt);
       // 커서는 가만히 있고 캐릭터가 그 밑으로 걸어 들어올 수도 있다. mousemove 때만 판정하면
       // 그동안 클릭이 바탕화면으로 새어 나간다 (크게 설정일수록 빨라서 더 잘 생긴다).
@@ -950,6 +1087,7 @@
     reminders = cfg.reminders || [];
     chatOn = cfg.chatter !== false;
     modeByChar = cfg.modes || {};
+    tone = cfg.tone === 'dark' ? 'dark' : 'light';
 
     stage = await window.petAPI.getStage();
     roster = await window.petAPI.listCharacters();
@@ -1021,6 +1159,14 @@
       pr[0].S.x = (stage.workLeft + stage.workRight) / 2 - 150;
       pr[1].S.x = (stage.workLeft + stage.workRight) / 2 + 150;
       hug.start(pr[0], pr[1]);
+    } else if (cmd === 'nightmare' || cmd === 'down' || cmd === 'teleport' || cmd === 'bloodcast') {
+      // 원작처럼 연출 바로 보기 (--start=nightmare 등). 분위기를 저장하지 않고 잠시 바꾼다
+      tone = 'dark';
+      placeOnGround(p);
+      if (cmd === 'nightmare') { S.dir = 1; p.setState('nightmare', 8); p.chatter.react('nightmare', 1); }
+      else if (cmd === 'down') { p.setState('down', 3); p.chatter.react('down', 1); }
+      else if (cmd === 'teleport') dark.vanish(p);
+      else p.setState('bloodcast', 1.8);
     } else if (cmd === 'talk') {
       // 둘의 대화 바로 보기 (--start=talk) — 상대가 없으면 첫 대화의 상대를 불러온다
       const d = (p.character.dialogues || [])[0];

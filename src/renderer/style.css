@@ -111,3 +111,33 @@ body {
   margin: 5px 8px;
   background: rgba(255, 255, 255, 0.09);
 }
+
+/* 붉은 호 — 사마리가 피 마법으로 사라지고 나타날 때 */
+.redarc {
+  --arc: #b3122e;
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  background: radial-gradient(circle, color-mix(in srgb, var(--arc) 70%, transparent) 0%,
+    color-mix(in srgb, var(--arc) 25%, transparent) 45%, transparent 70%);
+  box-shadow: 0 0 34px 10px color-mix(in srgb, var(--arc) 45%, transparent);
+  animation: redarc-glow 0.95s ease-out forwards;
+}
+.redarc::after {
+  content: '';
+  position: absolute;
+  inset: 16%;
+  border-radius: 50%;
+  border: 3px solid var(--arc);
+  border-left-color: transparent;
+  border-bottom-color: transparent;
+  animation: redarc-spin 0.95s cubic-bezier(.3, .1, .3, 1) forwards;
+}
+@keyframes redarc-glow {
+  0%   { transform: scale(0.2); opacity: 0; }
+  25%  { opacity: 1; }
+  100% { transform: scale(1.35); opacity: 0; }
+}
+@keyframes redarc-spin {
+  to { transform: rotate(540deg); }
+}

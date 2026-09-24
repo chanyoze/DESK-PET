@@ -420,6 +420,7 @@ ipcMain.handle('reminders:remove', (_e, id) => {
   return list;
 });
 ipcMain.handle('settings:setChat', (_e, v) => settings.save({ chatter: !!v }));
+ipcMain.handle('settings:setTone', (_e, v) => settings.save({ tone: v === 'dark' ? 'dark' : 'light' }));
 ipcMain.handle('settings:setCompanion', (_e, id) => settings.save({ companion: id || null }));
 ipcMain.handle('settings:setMode', (_e, id, m) => {
   const modes = { ...(settings.load().modes || {}) };

@@ -149,6 +149,10 @@ Canvas가 아니라 **WebGL** 백엔드를 쓴다. spine-ts의 Canvas 백엔드�
 고른다. 왼쪽부터 번호가 붙고 모델 이름·해상도가 함께 나온다. "지금 마우스가 있는 모니터로"를 누르면
 헷갈릴 일이 없다. 고른 모니터가 빠지면 주 모니터로 돌아간다.
 
+**분위기** — 메뉴의 **분위기**에서 "가볍게 / 원작처럼". 매니페스트에 `linesDark` · `dialoguesDark` 가 있는
+캐릭터만 달라진다. 원작처럼일 때 매니페스트 `animations` 의 `nightmare`(새벽에 드물게) · `down`(세게 던지면
+가끔) · `bloodcast` + `teleport`(붉은 호 순간이동)가 쓰인다.
+
 **캐릭터 숨기기** — `character.json` 에 `"hidden": true` 를 넣으면 지우지 않고 목록에서만 뺀다.
 
 **대사** — `lines` 는 상태별 혼잣말 외에 반응(`picked` `thrown` `landed` `petted` `woken`),
@@ -376,6 +380,7 @@ npx electron . --start=clip:transform # 클립 하나를 계속 재생 (sprite �
 npx electron . --start=mode:knife     # 무장 모드로 계속 걷기
 npx electron . --start=hug            # 껴안기 바로 보기 (짝이 없으면 저장하지 않고 불러온다)
 npx electron . --start=talk           # 둘의 대화 바로 보기
+npx electron . --start=nightmare      # 원작처럼 연출 바로 보기 (nightmare · down · bloodcast · teleport)
 npx electron . --character=kaltsit    # 특정 캐릭터로 실행
 npx electron . --shot=out.png,5000    # 창 내용만 PNG로 저장하고 종료
 npx electron . --hitbox               # 클릭 판정 영역을 화면에 표시

@@ -105,6 +105,8 @@
       this.enabled = opts.enabled || (() => true);
       this.getMode = opts.getMode || (() => '');
       this.hasPartner = opts.hasPartner || (() => false);
+      this.getTone = opts.getTone || (() => 'light');
+      this.darkLines = null;      // 원작처럼 분위기용 대사 (있으면)
       this.lines = null;          // 캐릭터별 대사 (있으면)
       this.startedAt = Date.now();
       this.lastAt = Date.now();
@@ -117,6 +119,7 @@
 
     setCharacter(character) {
       this.lines = (character && character.lines) || null;
+      this.darkLines = (character && character.linesDark) || null;
       this.bags = {};
     }
 
@@ -131,9 +134,14 @@
      * 다시 섞을 때 방금 한 말이 맨 앞에 오지 않게 한다.
      */
     draw(key) {
-      const pool = this.pool(key);
+      // 원작처럼이면 어두운 대사를 절반쯤 섞는다 (평소 대사가 없는 묶음은 어두운 쪽만)
+      const dark = this.getTone() === 'dark' && this.darkLines && this.darkLines[key];
+      const base = this.pool(key);
+      const useDark = !!(dark && dark.length) && (!base.length || Math.random() < 0.5);
+      const pool = useDark ? dark : base;
       if (!pool.length) return null;
-      let bag = this.bags[key];
+      const bagKey = (useDark ? 'dark:' : '') + key;
+      let bag = this.bags[bagKey];
       if (!bag || !bag.length || bag.src !== pool) {
         bag = pool.slice();
         for (let i = bag.length - 1; i > 0; i--) {
@@ -142,11 +150,18 @@
         }
         if (bag.length > 1 && bag[bag.length - 1] === this.lastLine) bag.unshift(bag.pop());
         bag.src = pool;
-        this.bags[key] = bag;
+        this.bags[bagKey] = bag;
       }
       const line = bag.pop();
       this.lastLine = line;
       return line;
+    }
+
+    /** 이 묶음에 쓸 대사가 있는지 (지금 분위기 기준) */
+    has(key) {
+      if (this.pool(key).length) return true;
+      const dark = this.getTone() === 'dark' && this.darkLines && this.darkLines[key];
+      return !!(dark && dark.length);
     }
 
     /** 지금 상황에 맞는 묶음 이름 */
@@ -154,9 +169,9 @@
       const state = this.getState();
       const mode = this.getMode();
       // 무기를 들고 있으면 절반은 무기 얘기
-      if (mode && this.pool('armed:' + mode).length && Math.random() < 0.5) return 'armed:' + mode;
+      if (mode && this.has('armed:' + mode) && Math.random() < 0.5) return 'armed:' + mode;
       // 같이 있으면 가끔 상대 얘기 (잘 때는 빼고)
-      if (state !== 'sleep' && this.hasPartner() && this.pool('together').length && Math.random() < 0.3) return 'together';
+      if (state !== 'sleep' && this.hasPartner() && this.has('together') && Math.random() < 0.3) return 'together';
       return BY_STATE[state] || 'idle';
     }
 
@@ -166,7 +181,7 @@
         if (!this.enabled()) return;
 
         const state = this.getState();
-        if (['drag', 'fall', 'climb', 'hug', 'hugged'].indexOf(state) >= 0) return;
+        if (['drag', 'fall', 'climb', 'hug', 'hugged', 'down', 'recover', 'nightmare', 'bloodcast', 'vanish'].indexOf(state) >= 0) return;
 
         const now = new Date();
         const bucket = timeBucket(now);
