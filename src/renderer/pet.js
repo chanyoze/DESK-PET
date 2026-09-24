@@ -775,7 +775,11 @@
     drag = null;
     if (tapped) {
       // 짧게 클릭하면 메뉴를 연다 (캐릭터 교체·크기·리마인더가 여기 모여 있다)
+      // 누르는 순간 drag 상태가 됐으니 되돌려야 한다. 안 그러면 잡힌 자세로 굳는다.
+      // 메뉴가 열려 있는 동안은 제자리에 세워 두고, 닫히면 다시 움직인다 (menu.onClose).
       S.vx = 0; S.vy = 0;
+      S.y = Math.min(S.y, stage.ground);
+      p.setState(S.y >= stage.ground - 0.5 ? 'idle' : 'fall', 1e6);
       menuPet = p;
       // 열 때마다 목록을 다시 읽는다 — 실행 중에 넣은 캐릭터도 바로 보이게
       window.petAPI.listCharacters().then((list) => {
@@ -842,6 +846,11 @@
     }
     menu = new window.PetUI.PetMenu();
     menu.onAction = onMenuAction;
+    // 메뉴를 닫으면 세워 뒀던 펫을 다시 움직이게 한다 (항목을 골랐으면 그 동작이 뒤이어 덮어쓴다)
+    menu.onClose = () => {
+      const p = menuPet;
+      if (p && p.S.state === 'idle' && p.S.until > 1e5) p.setState('idle', rand(0.8, 1.6));
+    };
 
     const cfg = await window.petAPI.getSettings();
     reminders = cfg.reminders || [];

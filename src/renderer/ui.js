@@ -80,6 +80,7 @@
       document.body.appendChild(this.el);
       this.open = false;
       this.onAction = () => {};
+      this.onClose = () => {};
 
       // 메뉴 밖을 누르면 닫힌다
       window.addEventListener('mousedown', (e) => {
@@ -129,9 +130,11 @@
     }
 
     close() {
+      const was = this.open;
       this.el.hidden = true;
       this.open = false;
       this._rect = null;
+      if (was) this.onClose();
     }
 
     get rect() {
