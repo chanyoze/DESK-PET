@@ -26,7 +26,14 @@
   let character = null;
   let view = null;
   let PX = 1;                    // 캐릭터 크기에 따른 물리 배율
-  let GRAVITY = 1980, WALK_SPEED = 57, CLIMB_SPEED = 121;
+  let GRAVITY = 1980, WALK_SPEED = 57, RUN_SPEED = 148, CLIMB_SPEED = 121;
+
+  /**
+   * 무장 모드 — 매니페스트 animations 에 "walk@knife" 처럼 모드가 붙은 키가 있으면
+   * 그 모드일 때 그쪽을 쓴다. 없는 상태는 평소 동작으로 떨어진다.
+   * 무기를 걷기 풀에 섞으면 걷다 멈출 때마다 무기가 바뀌어서 모드로 뺐다.
+   */
+  let mode = '';
 
   // ── 무대 ────────────────────────────────────────────────────
   let stage = { width: 1920, height: 1080, ground: 1040, workTop: 0, workLeft: 0, workRight: 1920 };
@@ -63,10 +70,35 @@
   };
   function animFor(state) {
     const map = (character && character.animations) || {};
-    return map[state] || DEFAULT_ANIM[state] || state;
+    let v = (mode && map[state + '@' + mode]) || map[state] || DEFAULT_ANIM[state] || state;
+    // 배열이면 변형 풀 — 이 상태에 들어갈 때마다 하나를 고른다
+    if (Array.isArray(v)) {
+      const ok = view ? v.filter((n) => view.has(n)) : v;
+      const pool = ok.length ? ok : v;
+      v = pool[Math.floor(Math.random() * pool.length)];
+    }
+    return v;
+  }
+
+  /** 매니페스트에 정의된 무장 모드들 (animations 키의 @ 뒤) */
+  function modesOf(ch) {
+    const set = new Set();
+    for (const k of Object.keys((ch && ch.animations) || {})) {
+      const i = k.indexOf('@');
+      if (i > 0) set.add(k.slice(i + 1));
+    }
+    return [...set];
+  }
+
+  /** 달리기는 전용 동작이 있을 때만. 무장 중엔 그 모드용 달리기가 있어야 한다 */
+  function canRun() {
+    const map = (character && character.animations) || {};
+    if (!map.run || !view || !view.has(animFor('run'))) return false;
+    return !mode || !!map['run@' + mode];
   }
 
   const STILL = ['idle', 'idle2', 'sit', 'sleep', 'pet', 'special'];
+  const MOVING = ['walk', 'run'];
 
   function setState(name, dur) {
     if (S.state !== name) {
@@ -104,6 +136,7 @@
     }
     if (r < 0.58) {                            // 걷기를 기본 행동으로
       S.dir = Math.random() < 0.5 ? -1 : 1;
+      if (canRun() && Math.random() < 0.25) return setState('run', rand(1.5, 3.2));
       return setState('walk', rand(3, 7));
     }
     // 서 있는 동작이 둘(Relax / Default)이라 번갈아 쓴다
@@ -111,7 +144,7 @@
     return setState('sit', rand(2.5, 6));
   }
 
-  const RESTING = ['idle', 'idle2', 'walk', 'sit', 'sleep', 'pet', 'special'];
+  const RESTING = ['idle', 'idle2', 'walk', 'run', 'sit', 'sleep', 'pet', 'special'];
 
   /**
    * 캐릭터 폭의 절반 (충돌·클릭 판정용).
@@ -164,6 +197,7 @@
     const airborne = S.y < stage.ground - 0.5 || Math.abs(S.vy) > 1;
     if (airborne) S.vy += GRAVITY * dt;
     if (S.state === 'walk') S.vx = S.dir * WALK_SPEED;
+    else if (S.state === 'run') S.vx = S.dir * RUN_SPEED;
 
     S.x += S.vx * dt;
     S.y += S.vy * dt;
@@ -198,14 +232,14 @@
       } else {
         S.vy = 0;
         if (S.state === 'fall') setState('idle', rand(1, 2.5));
-        if (S.state !== 'walk') S.vx *= Math.exp(-9 * dt);
+        if (MOVING.indexOf(S.state) < 0) S.vx *= Math.exp(-9 * dt);
       }
     } else if (S.state !== 'fall' && S.state !== 'pet') {
       setState('fall');
     }
 
     // 바라보는 방향
-    if (S.state === 'walk') S.facing = S.dir;
+    if (MOVING.indexOf(S.state) >= 0) S.facing = S.dir;
     else if (Math.abs(S.vx) > 40) S.facing = S.vx > 0 ? 1 : -1;
 
     // 다음 행동
@@ -239,6 +273,7 @@
   let menu = null;
   let chatter = null;
   let chatOn = true;     // 혼잣말 켜짐 (설정에 저장)
+  let modeByChar = {};    // 캐릭터별 무장 모드 (설정에 저장)
   let hitboxEl = null;   // --hitbox 디버그 표시
 
   /** 외부 알림 / 리마인더 → 캐릭터가 말하고 반응한다 */
@@ -275,6 +310,15 @@
     acts.push({ label: '가운데로 부르기', value: 'act:recall' });
     sections.push({ title: '동작', items: acts });
 
+    const modes = modesOf(character);
+    if (modes.length) {
+      sections.push({
+        title: '무장',
+        items: [{ label: '맨손', value: 'mode:', checked: !mode }]
+          .concat(modes.map((m) => ({ label: MODE_LABEL[m] || m, value: 'mode:' + m, checked: mode === m }))),
+      });
+    }
+
     sections.push({
       items: [{ label: '혼잣말', value: 'act:chat', checked: chatOn }],
     });
@@ -303,10 +347,21 @@
     menu.build(sections);
   }
 
+  const MODE_LABEL = { knife: '칼', shotgun: '산탄총', pistol: '권총' };
+
+  function setMode(m) {
+    mode = m;
+    window.petAPI.setMode(character.id, m);
+    if (view) view.play(animFor(S.state));   // 지금 동작도 바로 바꿔 든다
+  }
+
   async function onMenuAction(value) {
     const [kind, arg] = [value.slice(0, value.indexOf(':')), value.slice(value.indexOf(':') + 1)];
     if (kind === 'char') {
       await switchTo(arg);      // 저장은 switchTo 가 한다
+    } else if (kind === 'mode') {
+      setMode(arg);
+      say({ text: arg ? (MODE_LABEL[arg] || arg) + ' 들었어' : '내려놨어', ms: 1800 });
     } else if (kind === 'size') {
       window.petAPI.setSize(parseFloat(arg));   // 메인이 창을 새로고침한다
     } else if (kind === 'remind') {
@@ -483,6 +538,10 @@
     PX = (character.height || BASE_H) / BASE_H;
     GRAVITY = 1980 * PX;
     WALK_SPEED = (character.walkSpeed || 57) * PX;
+    RUN_SPEED = (character.runSpeed || (character.walkSpeed || 57) * 2.6) * PX;
+    // 무장 모드는 캐릭터마다 저장된다. 그 캐릭터에 없는 모드면 맨손
+    const saved = (modeByChar && modeByChar[character.id]) || '';
+    mode = modesOf(character).indexOf(saved) >= 0 ? saved : '';
     CLIMB_SPEED = 121 * PX;
     CLIMB_CHANCE = character.climbChance || 0;
   }
@@ -539,6 +598,7 @@
     const cfg = await window.petAPI.getSettings();
     reminders = cfg.reminders || [];
     chatOn = cfg.chatter !== false;
+    modeByChar = cfg.modes || {};
 
     chatter = new window.Chatter({
       say: say,
@@ -581,7 +641,22 @@
   });
 
   function runCommand(cmd) {
-    if (cmd.indexOf('state:') === 0) {
+    if (cmd.indexOf('clip:') === 0) {
+      // 개발용: 클립 하나를 바닥에서 계속 재생 (--start=clip:transform)
+      S.x = (stage.workLeft + stage.workRight) / 2;
+      S.y = stage.ground;
+      S.vx = 0; S.vy = 0;
+      setState('idle', 1e6);
+      view.play(cmd.slice(5));
+    } else if (cmd.indexOf('mode:') === 0) {
+      // 개발용: 무장 모드로 걷기 (--start=mode:shotgun)
+      mode = cmd.slice(5);
+      S.x = (stage.workLeft + stage.workRight) / 2;
+      S.y = stage.ground;
+      S.vx = 0; S.vy = 0;
+      S.dir = 1;
+      setState('walk', 1e6);
+    } else if (cmd.indexOf('state:') === 0) {
       // 개발용: 특정 동작을 바닥에서 계속 재생 (--start=state:sit)
       S.x = (stage.workLeft + stage.workRight) / 2;
       S.y = stage.ground;

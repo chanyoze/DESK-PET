@@ -135,12 +135,23 @@ Canvas가 아니라 **WebGL** 백엔드를 쓴다. spine-ts의 Canvas 백엔드�
 - `height` 는 대기 자세의 실제 그림 높이 기준 (Spine·파츠와 같은 뜻)
 - 게임 에셋엔 대기 모션이 없어서 `bob` 으로 숨쉬기를 얹는다
 - `idle` 클립은 필수
+- `once: true` 클립은 한 번만 재생하고 마지막 칸에서 멈춘다 (변신 같은 연출)
+
+`animations` 는 모든 렌더러 공통으로 두 가지를 더 받는다.
+
+- **변형 풀** — 값이 배열이면 그 상태에 들어갈 때마다 하나를 랜덤으로 고른다
+  (`"sleep": ["sleep", "lieback", "prone"]`)
+- **무장 모드** — `"walk@knife"` 처럼 `@모드` 가 붙은 키가 있으면 메뉴에 **무장** 섹션이 생긴다.
+  그 모드일 때는 그 키를, 없는 상태는 평소 동작을 쓴다. 캐릭터별로 저장된다
+- `run` 이 있으면 걷기 대신 가끔 달린다 (`runSpeed`)
 
 **RPG Maker MV 게임에서 뽑기** — 레시피(칸 좌표만 적힌 JSON)를 주면 설치된 게임에서 시트를
-풀어 `%APPDATA%/deskpet/characters` 에 캐릭터를 만든다.
+풀어 `%APPDATA%/deskpet/characters` 에 캐릭터를 만든다. 레시피 시트에 `"mod": true` 가 붙어
+있으면 `--mod` 로 준 모드 폴더에서 읽는다.
 
 ```bash
 npm run extract-rpgmv -- "<게임 폴더>" tools/recipes/termina/marina.json
+npm run extract-rpgmv -- "<게임 폴더>" tools/recipes/termina/samarie.json --mod="<모드 www 폴더>"
 ```
 
 피어 앤 헝거 2: 테르미나의 마리나·사마리 레시피가 들어 있다. 조사 기록은
@@ -337,7 +348,9 @@ npx electron . --dev                  # 개발자 도구
 npx electron . --trace                # 상태값(위치·속도·상태)을 터미널에 출력
 npx electron . --start=climb          # 실행하자마자 벽 타기
 npx electron . --start=climbhold      # 벽 타기를 제자리에 고정 (자세 확인용)
-npx electron . --start=state:sit      # 특정 동작을 바닥에서 계속 재생 (sprite 레시피 확인용)
+npx electron . --start=state:sit      # 특정 상태를 바닥에서 계속 재생
+npx electron . --start=clip:transform # 클립 하나를 계속 재생 (sprite 레시피 확인용)
+npx electron . --start=mode:knife     # 무장 모드로 계속 걷기
 npx electron . --character=kaltsit    # 특정 캐릭터로 실행
 npx electron . --shot=out.png,5000    # 창 내용만 PNG로 저장하고 종료
 npx electron . --hitbox               # 클릭 판정 영역을 화면에 표시

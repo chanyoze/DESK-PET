@@ -362,6 +362,11 @@ ipcMain.handle('reminders:remove', (_e, id) => {
   return list;
 });
 ipcMain.handle('settings:setChat', (_e, v) => settings.save({ chatter: !!v }));
+ipcMain.handle('settings:setMode', (_e, id, m) => {
+  const modes = { ...(settings.load().modes || {}) };
+  if (m) modes[id] = m; else delete modes[id];
+  settings.save({ modes });
+});
 ipcMain.on('app:quit', () => app.quit());
 ipcMain.handle('character:list', () => listCharacters());
 ipcMain.handle('spine:path', () => {

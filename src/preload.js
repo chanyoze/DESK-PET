@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld('petAPI', {
   getSpinePath: () => ipcRenderer.invoke('spine:path'),
   getPaths: () => ipcRenderer.invoke('paths:get'),
   setChat: (v) => ipcRenderer.invoke('settings:setChat', v),
+  setMode: (id, m) => ipcRenderer.invoke('settings:setMode', id, m),
   quit: () => ipcRenderer.send('app:quit'),
 
   // ── 메인 → 렌더러 ──

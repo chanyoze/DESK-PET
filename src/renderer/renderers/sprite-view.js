@@ -10,6 +10,7 @@
  *           좌우가 다른 그림이면 frames 대신 left / right 를 준다 (뒤집지 않는다).
  *           frames 만 있으면 정면 그림으로 보고 방향과 무관하게 그린다.
  *           bob: 1 이면 가만히 있는 동작에 숨쉬기를 얹는다 (한 장짜리 대기용).
+ *           once: true 면 한 번만 재생하고 마지막 칸에서 멈춘다 (변신 같은 연출).
  *
  * 발 위치는 칸마다 알파를 훑어서 찾는다. 게임마다 칸 안의 여백이 제각각이라
  * 사람이 맞추면 동작이 바뀔 때마다 캐릭터가 위아래로 튄다.
@@ -98,6 +99,7 @@
           sheet: sh,
           fps: def.fps || 6,
           bob: def.bob || 0,
+          once: !!def.once,
           lists,
           baseline: bottom + 1,
           figureH: bottom + 1 - top,
@@ -176,7 +178,8 @@
       const clip = this.clips[this._current || 'idle'];
       const list = clip.lists.front || (facing < 0 ? clip.lists.left : clip.lists.right) ||
         clip.lists.left || clip.lists.right;
-      const [col, row] = list[Math.floor(this._t * clip.fps) % list.length];
+      const step = Math.floor(this._t * clip.fps);
+      const [col, row] = list[clip.once ? Math.min(step, list.length - 1) : step % list.length];
       const sh = clip.sheet;
 
       const ctx = this.ctx;

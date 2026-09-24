@@ -2,7 +2,9 @@
 /**
  * RPG Maker MV 게임에서 캐릭터 시트를 뽑아 DeskPet 캐릭터 폴더를 만든다.
  * -------------------------------------------------------------
- *   node tools/rpgmv-extract.js <게임 폴더> <레시피.json> [--out=폴더]
+ *   node tools/rpgmv-extract.js <게임 폴더> <레시피.json> [--out=폴더] [--mod=모드 www 폴더]
+ *
+ *   레시피 시트에 "mod": true 가 붙은 것은 --mod 폴더에서 읽는다.
  *
  *   예) node tools/rpgmv-extract.js "C:/Program Files (x86)/Steam/steamapps/common/Fear & Hunger 2 Termina" tools/recipes/termina/marina.json
  *
@@ -57,7 +59,7 @@ function main() {
   const args = process.argv.slice(2);
   const pos = args.filter((a) => !a.startsWith('--'));
   const outArg = (args.find((a) => a.startsWith('--out=')) || '').slice(6);
-  if (pos.length < 2) die('사용법: node tools/rpgmv-extract.js <게임 폴더> <레시피.json> [--out=폴더]');
+  if (pos.length < 2) die('사용법: node tools/rpgmv-extract.js <게임 폴더> <레시피.json> [--out=폴더] [--mod=모드 폴더]');
 
   const [gameDir, recipePath] = pos;
   const www = findWww(gameDir);
@@ -65,6 +67,18 @@ function main() {
 
   const recipe = JSON.parse(fs.readFileSync(recipePath, 'utf8'));
   const key = readKey(www);
+
+  // 모드 시트("mod": true)는 모드 폴더에서 읽는다. 모드는 원본과 같은 파일 이름을
+  // 덮어쓰기도 해서(%apprentice) 원본 폴더에서 찾으면 다른 그림이 나온다.
+  const modArg = (args.find((a) => a.startsWith('--mod=')) || '').slice(6);
+  const needsMod = Object.values(recipe.sheets).some((d) => d.mod);
+  let modWww = null, modKey = null;
+  if (needsMod) {
+    if (!modArg) die('이 레시피는 모드 파일이 필요하다: --mod=<모드 www 폴더>' + (recipe.mod ? '  (' + recipe.mod + ')' : ''));
+    modWww = findWww(modArg);
+    if (!modWww) die('모드 폴더에서 data/System.json 을 찾지 못했다: ' + modArg);
+    modKey = readKey(modWww);
+  }
 
   const appData = process.env.APPDATA || path.join(require('os').homedir(), '.config');
   const outDir = outArg || path.join(appData, 'deskpet', 'characters', recipe.id);
@@ -75,9 +89,10 @@ function main() {
   const manifest = { ...recipe.manifest, sheets: {} };
   for (const [name, def] of Object.entries(recipe.sheets)) {
     const file = name + '.png';
-    fs.writeFileSync(path.join(outDir, file), readImage(www, key, def.from));
+    const png = def.mod ? readImage(modWww, modKey, def.from) : readImage(www, key, def.from);
+    fs.writeFileSync(path.join(outDir, file), png);
     manifest.sheets[name] = { file, frame: def.frame };
-    console.log('[extract]', def.from, '→', file);
+    console.log('[extract]', (def.mod ? '(모드) ' : '') + def.from, '→', file);
   }
   fs.writeFileSync(path.join(outDir, 'character.json'), JSON.stringify(manifest, null, 2));
   console.log('[extract] 완료:', manifest.name, '→', outDir);
