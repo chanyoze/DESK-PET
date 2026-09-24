@@ -615,6 +615,7 @@
       // 원래 자리에서 적어도 250px 떨어진 곳
       let x = S.x;
       for (let i = 0; i < 8 && Math.abs(x - S.x) < 250; i++) x = rand(L, R);
+      if (p.teleportTo != null) { x = p.teleportTo; p.teleportTo = null; }   // 녹화·테스트용 지정 위치
       S.x = x;
       S.y = stage.ground;
       S.vx = 0; S.vy = 0;
@@ -1192,6 +1193,7 @@
 
   // 디버깅용
   window.__pets = pets;
+  window.__debug = { hug, talk, dark, setCompanion };   // 녹화 · 테스트 스크립트용
   if (location.search.indexOf('trace') >= 0) {
     setInterval(() => {
       for (const p of pets) {
