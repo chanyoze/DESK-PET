@@ -143,7 +143,7 @@
       </a>
       <a class="btn ghost" href="https://github.com/chanyoze/DESK-PET">GitHub</a>
     </div>
-    <p class="meta">설치 필요 없음 · exe 하나 · Windows 10/11 64비트</p>
+    <p class="meta">v0.10.0 · 설치 필요 없음 · exe 하나 · Windows 10/11 64비트</p>
 
     <div class="stage-wrap">
       <div class="stage" id="stage">
@@ -182,9 +182,24 @@
         <p>드래그해서 집어 던지면 속도가 실려 날아가고, 바닥에서 통통 튑니다.</p>
       </div>
       <div class="card">
+        <span class="emoji">👭</span>
+        <h3>둘이 같이 다닙니다</h3>
+        <p>동료를 한 명 불러 두 마리가 함께 돌아다닙니다. 가끔 둘이 대화를 주고받고, 짝이 맞는 캐릭터끼리는 껴안기도 합니다.</p>
+      </div>
+      <div class="card">
         <span class="emoji">🎨</span>
         <h3>캐릭터를 바꿉니다</h3>
-        <p>Spine 2D 스켈레톤을 넣으면 원하는 캐릭터로 교체됩니다. 크기도 조절됩니다.</p>
+        <p>Spine 2D 스켈레톤이나 2D 스프라이트 시트(RPG Maker 등)를 넣으면 원하는 캐릭터로 바뀝니다. 크기도 조절됩니다.</p>
+      </div>
+      <div class="card">
+        <span class="emoji">🖥️</span>
+        <h3>모니터를 고릅니다</h3>
+        <p>모니터가 여럿이면 어느 모니터에서 돌아다닐지 메뉴에서 고릅니다. 모델 이름으로 구분됩니다.</p>
+      </div>
+      <div class="card">
+        <span class="emoji">🎭</span>
+        <h3>동작과 분위기</h3>
+        <p>상태마다 여러 동작 중 하나를 골라 움직이고, 캐릭터에 따라 무장 모드나 "원작처럼" 분위기를 켤 수 있습니다.</p>
       </div>
       <div class="card">
         <span class="emoji">🪶</span>
@@ -200,7 +215,7 @@
     <h2>조작</h2>
     <p class="lead">전부 캐릭터를 클릭하는 데서 시작합니다.</p>
     <table>
-      <tr><td>캐릭터 좌클릭</td><td>메뉴 — 캐릭터 · 크기 · 쓰다듬기 · 리마인더 · 종료</td></tr>
+      <tr><td>캐릭터 좌클릭</td><td>메뉴 — 캐릭터 · 함께 다니기 · 모니터 · 크기 · 동작 · 리마인더 · 종료</td></tr>
       <tr><td>캐릭터 드래그</td><td>집어서 던지기</td></tr>
       <tr><td>말풍선 클릭</td><td>넘기기</td></tr>
       <tr><td>트레이 아이콘 우클릭</td><td>같은 메뉴</td></tr>
@@ -225,8 +240,10 @@
   <div class="wrap">
     <h2>캐릭터 추가하기</h2>
     <p class="lead">
-      기본 캐릭터가 하나 들어 있습니다. Spine 2D 스켈레톤이 있으면 원하는 캐릭터를 넣을 수 있습니다.
+      기본 캐릭터가 하나 들어 있습니다. <strong>Spine 2D 스켈레톤</strong>이나
+      <strong>2D 스프라이트 시트</strong>가 있으면 원하는 캐릭터를 넣을 수 있습니다.
     </p>
+    <h3 style="margin:22px 0 8px">Spine</h3>
 
     <pre><code>%APPDATA%\deskpet\characters\내캐릭터\
     character.json
@@ -254,11 +271,23 @@
 
 https://raw.githubusercontent.com/EsotericSoftware/spine-runtimes/3.8/spine-ts/build/spine-webgl.js</code></pre>
 
+    <h3 style="margin:28px 0 8px">스프라이트 시트 · RPG Maker MV 게임</h3>
+    <p style="color:var(--dim); font-size:14.5px">
+      칸을 넘기는 2D 캐릭터는 <code>"renderer": "sprite"</code> 로 넣습니다.
+      RPG Maker MV 게임은 <strong style="color:var(--fg)">레시피</strong>(어느 파일의 몇 번째 칸을 쓸지만 적은 JSON)로
+      <strong style="color:var(--fg)">내 PC에 설치된 게임</strong>에서 캐릭터를 뽑아 씁니다.
+      저장소에 레시피 예시가 들어 있습니다.
+    </p>
+    <pre><code>node tools/rpgmv-extract.js "&lt;게임 폴더&gt;" tools/recipes/…/캐릭터.json</code></pre>
+    <p style="color:var(--dim); font-size:14.5px">
+      자세한 형식은 <a href="https://github.com/chanyoze/DESK-PET#캐릭터--코드는-공개-에셋은-각자-byoa" style="color:var(--fg)">README</a>에 있습니다.
+    </p>
+
     <div class="warn">
       <strong>캐릭터 에셋은 각자 준비합니다.</strong>
       이 앱에는 자체 제작 캐릭터만 들어 있습니다. 게임이나 다른 작품의 에셋은
-      포함되어 있지 않고, 앞으로도 포함하지 않습니다.
-      개인적으로 사용하는 것과 배포하는 것은 다른 문제입니다.
+      포함되어 있지 않고, 앞으로도 포함하지 않습니다. 레시피로 뽑은 캐릭터는 게임 정품이 있어야 하고,
+      내 PC에서만 쓰세요. 개인적으로 사용하는 것과 배포하는 것은 다른 문제입니다.
     </div>
   </div>
 </section>
