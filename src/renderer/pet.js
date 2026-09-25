@@ -942,6 +942,14 @@
     }
   }
 
+  // 메인이 알려 주는 커서 좌표 — forward mousemove 가 끊겨도 클릭 전환이 되게 한다
+  window.petAPI.onCursor((p) => {
+    if (drag) return;              // 드래그 중엔 실제 mousemove 가 더 정확하다
+    cursor.x = p.x;
+    cursor.y = p.y;
+    syncInteractive(false);
+  });
+
   window.addEventListener('mousemove', (e) => {
     cursor.x = e.clientX;
     cursor.y = e.clientY;

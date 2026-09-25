@@ -36,4 +36,6 @@ contextBridge.exposeInMainWorld('petAPI', {
   onStage: (cb) => ipcRenderer.on('pet:stage', (_e, stage) => cb(stage)),
   /** 외부 알림·리마인더 → 말풍선 */
   onSay: (cb) => ipcRenderer.on('pet:say', (_e, msg) => cb(msg)),
+  /** 메인이 읽은 커서 좌표 (창 기준) — 클릭 통과 중에도 온다 */
+  onCursor: (cb) => ipcRenderer.on('pet:cursor', (_e, p) => cb(p)),
 });

@@ -208,6 +208,10 @@ function createWindow() {
   win.setAlwaysOnTop(true, 'screen-saver');
   // 기본은 클릭 통과. forward:true 덕분에 renderer는 mousemove를 계속 받는다.
   win.setIgnoreMouseEvents(true, { forward: true });
+  // 새로고침(모니터 이동·크기 변경)할 때마다 클릭 통과로 되돌린다. 렌더러는 새로 부팅하며
+  // "클릭 안 받음"에서 시작하는데, 메뉴를 누르던 중의 "받음" 상태가 남아 있으면
+  // 그 모니터 전체의 클릭을 이 창이 먹어 버린다.
+  win.webContents.on('did-start-loading', () => win?.setIgnoreMouseEvents(true, { forward: true }));
 
   const flags = ['trace', 'hitbox'].filter((f) => process.argv.includes('--' + f));
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'), flags.length ? { search: flags.join('&') } : {});
@@ -453,6 +457,26 @@ ipcMain.handle('character:load', (_e, id) => {
 });
 
 // renderer가 "지금 커서가 캐릭터 위에 있다"고 알려주면 클릭 통과를 잠시 끈다
+/**
+ * 커서 위치를 메인이 직접 읽어 렌더러에 알려 준다 (초당 20번, 바뀔 때만).
+ *
+ * 클릭 통과 창은 setIgnoreMouseEvents 의 forward 로 mousemove 를 받는데, 이게
+ * 주 모니터가 아닌 곳에서 시작하거나 창을 다른 모니터로 옮긴 뒤에는 끊긴다
+ * (그러면 캐릭터 위에 커서가 있어도 클릭 전환이 안 돼서 캐릭터를 못 누른다).
+ * forward 에 기대지 않고 커서 좌표를 직접 넘겨서 어느 모니터에서든 동작하게 한다.
+ */
+let lastCursor = '';
+setInterval(() => {
+  if (!win || win.isDestroyed()) return;
+  const p = screen.getCursorScreenPoint();
+  const b = win.getBounds();
+  const x = p.x - b.x, y = p.y - b.y;
+  const key = x + ',' + y;
+  if (key === lastCursor) return;
+  lastCursor = key;
+  win.webContents.send('pet:cursor', { x, y });
+}, 50);
+
 ipcMain.on('mouse:interactive', (_e, interactive) => {
   if (!win) return;
   if (interactive) win.setIgnoreMouseEvents(false);
