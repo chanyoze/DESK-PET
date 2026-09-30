@@ -43,7 +43,9 @@
 - `node tools/pmd-import.js tools/recipes/pokemon/herdier.json` → `%APPDATA%\deskpet\characters\pokemon-herdier`
   (PMDCollab 에서 받아 온다 — 인터넷 필요. 회사 PC에서도 같은 명령으로 만들 수 있다)
 - 동작 10개 화면 확인 완료. 매핑은 도감 아티팩트(9절)대로, 사용자 확인 받음
-- **맥 빌드 완료 → 지인에게 전달 대기**: 릴리스 `mac-v0.15.0` 의 `DeskPet-mac-0.15.0.zip` (universal, ad-hoc 서명)
+- **지인 전달용 통파일 (2026-10-01)**: 집 PC 바탕화면 `DeskPet-mac-pokemon-herdier-0.15.0.zip` — 하데리어만 들어 있고
+  목록에도 하데리어만 (`onlyCharacters`), 인터넷 없이 바로 나온다. GitHub 아티팩트는 받은 뒤 지웠다. 릴리스에는 없다
+- 맥 빌드(그림 없는 판): 릴리스 `mac-v0.15.0` 의 `DeskPet-mac-0.15.0.zip` (universal, ad-hoc 서명)
   - 그림 없음 (확인함). 처음 켤 때 `autoInstall` 로 PMDCollab 에서 하데리어를 받는다 (`src/pmd.js`, main.js `autoInstallCharacters`)
   - 지인이 할 일: zip 풀기 → 응용 프로그램 폴더로 → 터미널에서 한 번 `xattr -cr /Applications/DeskPet.app` → 실행
   - 다시 빌드: Actions 탭 "Build macOS app" 또는 `gh workflow run mac.yml` (`tools/build-mac.js`, 프리셋 `tools/presets/herdier.json`)

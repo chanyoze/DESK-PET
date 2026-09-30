@@ -334,6 +334,10 @@ node tools/pmd-import.js tools/recipes/pokemon/herdier.json      # 하데리어 
 
 - 결과: 릴리스 `mac-v버전` 의 `DeskPet-mac-x.y.z.zip` — 애플 실리콘 · 인텔 둘 다 되는 universal
 - **그림은 들어 있지 않다.** 프리셋(`tools/presets/*.json`)의 `autoInstall` 에 적힌 레시피 캐릭터를 처음 켤 때 받아 온다
+- **통파일**(캐릭터를 앱 안에 넣은 것): `gh workflow run mac.yml -f preset=tools/presets/herdier-bundled.json -f bundle=pokemon/herdier`
+  - 빌드하는 자리에서 레시피 캐릭터를 받아 넣는다. 프리셋의 `onlyCharacters` 로 그 캐릭터만 목록에 보인다
+  - **그림이 들어가므로 릴리스에 올리지 않는다.** 1일짜리 아티팩트로만 남으니 `gh run download` 로 받은 뒤
+    `gh api -X DELETE repos/<owner>/<repo>/actions/artifacts/<id>` 로 바로 지운다
 - 코드 서명 인증서가 없어서 ad-hoc 서명만 한다 → 처음 한 번 터미널에서 `xattr -cr /Applications/DeskPet.app`
 - 맥에서는 Dock 아이콘 없이 메뉴바에만 뜨고, 모든 데스크톱(Spaces)에 보인다
 - Claude Code 알림 연결 · 그 터미널로 · `deskpet.ps1` 은 PowerShell 이라 아직 윈도우 전용
