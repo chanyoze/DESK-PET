@@ -328,6 +328,16 @@ node tools/pmd-import.js tools/recipes/pokemon/herdier.json      # 하데리어 
 - **라이선스**: 스프라이트는 CC BY-NC 4.0 (비상업 · 크레딧). 캐릭터 폴더에 `CREDITS.txt` 가 같이 생긴다.
   포켓몬은 닌텐도 · 게임프리크 · 포켓몬 컴퍼니 IP — 개인용으로만 쓰고 배포하지 않는다
 
+## 맥 (macOS)
+
+맥 앱은 맥에서만 빌드된다 → GitHub Actions 맥 러너가 만든다 (Actions 탭 "Build macOS app" 또는 `gh workflow run mac.yml`).
+
+- 결과: 릴리스 `mac-v버전` 의 `DeskPet-mac-x.y.z.zip` — 애플 실리콘 · 인텔 둘 다 되는 universal
+- **그림은 들어 있지 않다.** 프리셋(`tools/presets/*.json`)의 `autoInstall` 에 적힌 레시피 캐릭터를 처음 켤 때 받아 온다
+- 코드 서명 인증서가 없어서 ad-hoc 서명만 한다 → 처음 한 번 터미널에서 `xattr -cr /Applications/DeskPet.app`
+- 맥에서는 Dock 아이콘 없이 메뉴바에만 뜨고, 모든 데스크톱(Spaces)에 보인다
+- Claude Code 알림 연결 · 그 터미널로 · `deskpet.ps1` 은 PowerShell 이라 아직 윈도우 전용
+
 ## 개인 빌드 (뽑아 둔 캐릭터를 exe에 넣기)
 
 게임이 없는 다른 PC(예: 회사 PC)에서 쓰려면, 내 PC에서 뽑아 둔 캐릭터를 exe 안에 넣어 빌드한다.
