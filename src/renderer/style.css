@@ -18,6 +18,215 @@ body {
   top: 0;
   left: 0;
   will-change: transform;
+  /* 캐릭터 클릭은 pet.js 가 좌표로 판정한다. 캔버스가 이벤트를 먹으면 투명한 부분 밑의 카드를 못 누른다 */
+  pointer-events: none;
+}
+
+/* ── 카드 (할 일 · 스티커 메모) ─────────────────────── */
+.notes-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+.card {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 220px;
+  border-radius: 10px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.28);
+  font-size: 13px;
+  line-height: 1.5;
+  overflow: hidden;
+  will-change: transform;
+}
+
+/* 크기를 정한 카드는 본문이 남은 높이를 채우고 넘치면 스크롤 */
+.card {
+  display: flex;
+  flex-direction: column;
+}
+
+.card .card-body {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.card.sized .card-body {
+  max-height: none !important;
+}
+
+/* 오른쪽 아래 크기 조절 손잡이 */
+.card-grip {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 14px;
+  height: 14px;
+  cursor: nwse-resize;
+  background: linear-gradient(135deg, transparent 50%, rgba(128, 128, 128, 0.55) 50%, rgba(128, 128, 128, 0.55) 60%,
+    transparent 60%, transparent 72%, rgba(128, 128, 128, 0.55) 72%, rgba(128, 128, 128, 0.55) 82%, transparent 82%);
+  opacity: 0.6;
+}
+
+.card-grip:hover {
+  opacity: 1;
+}
+
+.card.dragging {
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
+  opacity: 0.94;
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 26px;
+  padding: 2px 4px 2px 10px;
+  cursor: move;
+  user-select: none;
+}
+
+.card-title {
+  flex: 1;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card-btn {
+  min-width: 22px;
+  height: 22px;
+  padding: 0 5px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  line-height: 22px;
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+.card-btn:hover {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.card-btn.armed {
+  opacity: 1;
+  background: #c53030;
+  color: #fff;
+  font-size: 11px;
+}
+
+.card-body {
+  padding: 4px 12px 10px;
+}
+
+/* 할 일 카드 — 어두운 반투명 */
+.todo-card {
+  background: rgba(28, 32, 44, 0.93);
+  color: #e8ecf5;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.todo-card .card-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.todo-list {
+  overflow-y: auto;
+}
+
+.todo-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 2px 0;
+  cursor: pointer;
+}
+
+.todo-item input {
+  margin: 3px 0 0;
+  accent-color: #7fd1a0;
+  cursor: pointer;
+}
+
+.todo-card {
+  width: 280px;
+}
+
+.todo-text {
+  flex: 1;
+}
+
+.todo-item.done .todo-text {
+  color: #7d869c;
+  text-decoration: line-through;
+}
+
+/* 분류 제목 (오전 · 3시 전까지 · 밀린 것 …) */
+.todo-group {
+  margin: 7px 0 2px;
+  font-size: 11px;
+  color: #8f9bb3;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.chip-due,
+.chip-date {
+  flex: none;
+  margin-top: 2px;
+  padding: 0 6px;
+  border-radius: 8px;
+  font-size: 10.5px;
+  line-height: 17px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #c3cce0;
+}
+
+.chip-due.soon {
+  background: #975a16;
+  color: #fefcbf;
+}
+
+.chip-due.over {
+  background: #9b2c2c;
+  color: #fed7d7;
+}
+
+.todo-item.done .chip-due {
+  opacity: 0.5;
+}
+
+.todo-empty {
+  color: #8f9bb3;
+  font-size: 12px;
+  padding: 2px 0 4px;
+}
+
+/* 스티커 메모 — 색은 --note */
+.note-card {
+  background: var(--note, #f6e58d);
+  color: #2b2b2b;
+}
+
+.note-card .card-head {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.note-text {
+  padding-top: 8px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 260px;
+  overflow-y: auto;
 }
 
 /* ── 말풍선 ─────────────────────────────────────────── */
@@ -54,6 +263,81 @@ body {
 .bubble[data-mood='fail'] {
   background: rgba(254, 238, 238, 0.98);
   border-color: rgba(197, 48, 48, 0.5);
+}
+
+/* ── 알림 카드 — Claude · 기한 · 빌드. 대화 말풍선과 한눈에 구분되게 어둡고 왼쪽에 색 띠 ── */
+.bubble.alert-card {
+  --lv: #7f8aa3;
+  padding: 8px 12px 9px 14px;
+  border-radius: 10px;
+  background: rgba(24, 28, 40, 0.96);
+  color: #e8ecf5;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-left: 4px solid var(--lv);
+  white-space: normal;
+  min-width: 170px;
+}
+
+.alert-card[data-level='done'] { --lv: #48bb78; }
+.alert-card[data-level='permission'] { --lv: #ed8936; }
+.alert-card[data-level='waiting'] { --lv: #ecc94b; }
+.alert-card[data-level='fail'] { --lv: #f56565; }
+.alert-card[data-level='due'] { --lv: #4299e1; }
+.alert-card[data-level='build'] { --lv: #9f7aea; }
+
+.ac-head {
+  font-size: 10.5px;
+  color: #8f9bb3;
+  letter-spacing: 0.02em;
+}
+
+.ac-title {
+  margin-top: 1px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--lv);
+  white-space: pre-wrap;
+}
+
+.ac-line {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #c3cce0;
+  font-style: italic;
+  white-space: pre-wrap;
+}
+
+.bubble.alert-card[data-link='1'] {
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.bubble.alert-card[data-link='1'] .ac-head::after {
+  content: '  ↗ 눌러서 터미널로';
+  color: #6b7590;
+}
+
+/* 놓친 알림 배지 — 주인공 머리 위 */
+.inbox-badge {
+  position: absolute;
+  top: 0;
+  left: 0;
+  padding: 1px 7px 1px 5px;
+  border-radius: 10px;
+  background: #e53e3e;
+  color: #fff;
+  font-size: 11.5px;
+  font-weight: 700;
+  line-height: 18px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+  will-change: transform;
+  animation: badge-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes badge-pulse {
+  0%, 100% { box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35), 0 0 0 0 rgba(229, 62, 62, 0.55); }
+  50% { box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35), 0 0 0 6px rgba(229, 62, 62, 0); }
 }
 
 /* 누르면 그 터미널로 간다 (Claude 세션 말풍선) */

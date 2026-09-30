@@ -77,6 +77,7 @@
   let claudeState = null; // Claude Code 훅 연결 상태 (메뉴 열 때 갱신)
   let autoStart = null;   // 윈도우 시작 시 실행 { available, on }
   let claudeSessions = []; // Claude 세션 현황 (메뉴 열 때 갱신)
+  let todoState = { items: [], recap: {} };   // 할 일 목록 (메인이 파일을 지켜보다가 보내 준다)
   let sizeScale = 1;      // 크기 배율 (메뉴 체크 표시용 — 바꾸면 창이 새로 뜬다)
   let spineLoaded = false;
 
@@ -803,23 +804,33 @@
       if (!p || !p.view || ev.quiet || ev.kind === 'start' || ev.kind === 'quick' || ev.kind === 'end') return;
       console.log('[claude] 반응:', ev.kind, ev.project || '', ev.sec != null ? ev.sec + 's' : '');
 
-      const tag = ev.project ? '[' + ev.project + '] ' : '';
+      recap.yieldTo(p);
       const sid = ev.sid || '';
+      // 알림 카드 — 윗줄 출처 · 가운데 사실 · 아래 캐릭터 한마디 (대화 말풍선과 구분)
+      const card = (level, title, line) => ({ source: 'Claude', project: ev.project || '', level, title, line, at: Date.now() });
+      const dur = ev.sec >= 60 ? ' · ' + Math.round(ev.sec / 60) + '분' : '';
+      let msg = null;
       if (ev.kind === 'done') {
         const dozing = p.S.state === 'sleep';
         const kind = dozing ? 'sleepy' : ev.sec >= 300 ? 'long' : 'done';
-        const text = this.line(p, kind, { m: Math.round(ev.sec / 60) });
-        p.say({ text: tag + text, mood: 'happy', ms: 7000, sid });   // 자고 있었으면 깨면서 반응한다
+        const line = this.line(p, kind, { m: Math.round(ev.sec / 60) });
+        msg = { text: line, mood: 'happy', ms: 9000, sid, card: card('done', '작업 끝남' + dur, line) };   // 자고 있었으면 깨면서 반응한다
       } else if (ev.kind === 'fail') {
-        p.say({ text: tag + this.line(p, 'fail'), mood: 'fail', ms: 8000, sid });
+        const line = this.line(p, 'fail');
+        msg = { text: line, mood: 'fail', ms: 12000, sid, card: card('fail', '오류로 멈춤', line) };
       } else if (ev.kind === 'permission') {
-        p.say({ text: tag + this.line(p, 'permission'), mood: 'alert', ms: 9000, quiet: true, sid });
+        const line = this.line(p, 'permission');
+        msg = { text: line, mood: 'alert', ms: 12000, quiet: true, sid, card: card('permission', '허락 필요', line) };
         // 커서 아래쪽 바닥으로 달려온다. 커서가 다른 모니터에 있으면 그쪽 끝까지 (8초 안에 못 닿으면 거기서 멈춤)
         if (cursor.seen) p.rushTo(cursor.x, 'pet', 8);
         else if (p.S.state !== 'drag' && p.S.state !== 'fall') p.setState('pet', 2.2);
       } else if (ev.kind === 'waiting') {
-        p.say({ text: tag + this.line(p, 'waiting'), ms: 7000, sid });
+        const line = this.line(p, 'waiting');
+        msg = { text: line, ms: 10000, sid, card: card('waiting', '입력 기다림', line) };
       }
+      if (!msg) return;
+      inbox.add(msg);
+      p.say(msg);
     },
 
     /** 세션의 터미널 창으로 (말풍선 · 메뉴에서) */
@@ -893,6 +904,187 @@
         if (['idle', 'idle2', 'sit'].indexOf(S.state) >= 0 && onStage && Math.abs(dx) < 420 && Math.abs(dx) > p.halfWidth() * 0.5) {
           S.facing = dx > 0 ? 1 : -1;
         }
+      }
+    },
+  };
+
+  // ════════════════════════════════════════════════════════════
+  //  놓친 알림
+  // ════════════════════════════════════════════════════════════
+  /**
+   * 알림 카드(Claude · 기한 · 빌드)는 말풍선이 사라져도 여기 남는다.
+   * 안 읽은 게 있으면 주인공 머리 위에 빨간 배지(🔔 N) + 트레이 아이콘에 빨간 점 (main.js setTrayAlert).
+   * 읽음: 그 카드 말풍선을 누르거나, 배지를 눌러 목록을 열면 전부.
+   */
+  const INBOX_MAX = 30;
+  const LEVEL_ICON = { done: '✓', permission: '!', waiting: '…', fail: '✕', due: '⏰', build: '⚙', info: '·' };
+
+  const inbox = {
+    items: [],         // { id, at, card, sid, read }
+    el: null,
+    rect: null,
+
+    add(msg) {
+      const it = { id: 'a' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), at: Date.now(), card: msg.card, sid: msg.sid || '', read: false };
+      msg.inboxId = it.id;
+      this.items.unshift(it);
+      if (this.items.length > INBOX_MAX) this.items.length = INBOX_MAX;
+      this.sync();
+    },
+
+    unread() {
+      return this.items.filter((x) => !x.read).length;
+    },
+
+    read(id) {
+      for (const x of this.items) if (!id || x.id === id) x.read = true;
+      this.sync();
+    },
+
+    sync() {
+      const n = this.unread();
+      if (!this.el) {
+        this.el = document.createElement('div');
+        this.el.className = 'inbox-badge';
+        this.el.title = '놓친 알림 — 눌러서 보기';
+        document.body.appendChild(this.el);
+      }
+      this.el.hidden = !n;
+      this.el.textContent = '🔔 ' + n;
+      window.petAPI.inboxCount(n);
+    },
+
+    /** 주인공 머리 위에 붙인다 (매 프레임) */
+    place() {
+      const p = pets[0];
+      if (!this.el || this.el.hidden || !p || !p.view) { this.rect = null; return; }
+      const x = p.S.x + p.halfWidth() * 0.6;
+      const y = p.S.y - p.height - 6;
+      this.el.style.transform = 'translate3d(' + Math.round(x) + 'px,' + Math.round(y) + 'px,0)';
+      this.rect = { x, y, w: this.el.offsetWidth, h: this.el.offsetHeight };
+    },
+
+    /** 배지를 누르면 — 목록 메뉴 (누르면 그 터미널로), 열면 전부 읽음 */
+    open() {
+      const p = pets[0];
+      const hm = (t) => { const d = new Date(t); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); };
+      const items = this.items.slice(0, 12).map((x) => ({
+        label: hm(x.at) + '  ' + (LEVEL_ICON[x.card.level] || '·') + ' ' +
+          [x.card.source, x.card.project].filter(Boolean).join(' · ') + ' — ' + x.card.title + (x.sid ? '  ↗' : ''),
+        value: 'inbox:' + x.id,
+        checked: false,
+      }));
+      menuPet = p;
+      menu.build([
+        { title: '최근 알림 (↗ 누르면 그 터미널로)', items },
+        { items: [{ label: '목록 비우기', value: 'inbox:clear', danger: true }] },
+      ]);
+      menu.show(p.S.x, p.S.y - p.height * 0.55, stage);
+      this.read();
+      syncInteractive(true);
+    },
+  };
+
+  // ════════════════════════════════════════════════════════════
+  //  할 일 recap
+  // ════════════════════════════════════════════════════════════
+  /**
+   * 메인이 정각마다(설정 recap.every) 남은 할 일을 보내 준다 (main.js sendRecap). 주인공이 말한다.
+   * 앞 한 줄은 캐릭터 말투, 목록은 담백하게 — 5개까지, 나머지는 "+N개 더".
+   * 할 일이 하나도 적혀 있지 않으면 정각 recap 은 조용히 넘긴다 (조르지 않는다).
+   *
+   * 대사는 매니페스트의 recap 으로 덮어쓸 수 있다:
+   *   "recap": { "some": ["정각이야. 남은 거 {n}개:"], "now": ["지금 남은 거:"], "none": ["다 했네! 오늘 {d}개"], "empty": [...] }
+   * some 은 정각, now 는 "지금 정리해줘"로 불렀을 때.
+   * urgent / over 는 목록 끝의 재촉 한마디 — {t} 글, {t는} 글+은/는, {left} 남은(지난) 시간.
+   */
+  const RECAP_LINES = {
+    some: ['정각이야. 남은 거 {n}개:', '시간 됐어. 아직 남은 거:', '잊지 않았지? 남은 거 {n}개:'],
+    now: ['지금 남은 거 {n}개:', '정리해 보면, 남은 건:'],
+    none: ['할 일 다 끝냈네! 오늘 {d}개 했어.', '남은 거 없어. 좀 쉬어도 돼.'],
+    empty: ['적어 둔 할 일이 없어. 메뉴에서 추가할 수 있어.'],
+    // 목록 끝에 붙는 재촉 한마디 — 가장 급한 일 하나. {t는} 은 글 + 은/는, {left} 는 남은 시간
+    urgent: ['{t는} {left} 안에 처리해야 해. 부지런히 해!', '{t}, {left} 남았어. 서두르자!'],
+    over: ['{t는} 벌써 기한이 지났어. 얼른 하자!', '{t}, 늦었어… 지금이라도 해.'],
+  };
+  const RECAP_SHOW = 5;
+  const URGENT_WITHIN = 4 * 3600e3;    // 이 안에 기한인 일이 있으면 재촉한다
+
+  /** 받침에 맞춘 은/는 (한글이 아니면 '는') */
+  function topic(word) {
+    const c = word.charCodeAt(word.length - 1);
+    if (c < 0xac00 || c > 0xd7a3) return word + '는';
+    return word + ((c - 0xac00) % 28 ? '은' : '는');
+  }
+
+  /** 남은 시간 → "40분" · "2시간" · "2시간 반" */
+  function leftText(ms) {
+    const min = Math.max(1, Math.round(ms / 60e3));
+    if (min < 60) return min + '분';
+    const h = Math.floor(min / 60), m = min % 60;
+    return h + '시간' + (m >= 30 ? ' 반' : '');
+  }
+
+  const recap = {
+    line(p, kind, vars) {
+      const own = p.character && p.character.recap && p.character.recap[kind];
+      const pool = own && own.length ? own : RECAP_LINES[kind];
+      let t = pool[Math.floor(Math.random() * pool.length)];
+      for (const [k, v] of Object.entries(vars || {})) t = t.split('{' + k + '}').join(v);
+      return t;
+    },
+
+    on(r) {
+      const p = pets[0];
+      if (!p || !p.view) return;
+      const n = r.open.length;
+      // 오늘 적어 둔 게 없으면 정각엔 조르지 않는다 (직접 부르면 말한다)
+      if (!n && !r.todayAll && r.reason === 'scheduled') return;
+      let text;
+      if (!n && !r.todayAll) text = this.line(p, 'empty');
+      else if (!n) text = this.line(p, 'none', { d: r.doneToday || 0 });
+      else {
+        // 기한 지난 것 → 기한 가까운 것 → 기한 없는 것, 밀린 날짜 것은 날짜를 붙인다
+        const at = (x) => (x.due ? new Date(x.due.replace(' ', 'T') + (x.due.length > 10 ? ':00' : 'T23:59:00')).getTime() : Infinity);
+        const list = r.open.slice().sort((a, b) => at(a) - at(b));
+        const fmt = (x) => {
+          let s = '· ' + x.text;
+          if (x.late) s += ' (' + parseInt(x.date.slice(5, 7), 10) + '/' + parseInt(x.date.slice(8), 10) + ')';
+          if (x.due && x.due.length > 10) {
+            const left = at(x) - r.now;
+            s += ' ~' + x.due.slice(11) + (left < 0 ? ' (지남)' : left < URGENT_WITHIN ? ' (' + leftText(left) + ' 남음)' : '');
+          }
+          return s;
+        };
+        text = this.line(p, r.reason === 'manual' ? 'now' : 'some', { n }) + '\n' +
+          list.slice(0, RECAP_SHOW).map(fmt).join('\n') +
+          (n > RECAP_SHOW ? '\n+' + (n - RECAP_SHOW) + '개 더' : '');
+        // 가장 급한 일 하나를 캐릭터 말투로 재촉 — 기한 지난 것이 먼저, 없으면 4시간 안에 기한인 것
+        const first = list[0];
+        if (first && first.due) {
+          const left = at(first) - r.now;
+          const vars = { t: first.text, 't는': topic(first.text), left: leftText(Math.abs(left)) };
+          if (left < 0) text += '\n' + this.line(p, 'over', vars);
+          else if (left < URGENT_WITHIN) text += '\n' + this.line(p, 'urgent', vars);
+        }
+      }
+      if (r.reason === 'manual' && r.backlogOpen) text += '\n(언젠가 할 일 ' + r.backlogOpen + '개)';
+      console.log('[todo] recap 말함:', r.reason, n, '오늘', r.todayAll, '언젠가', r.backlogOpen);
+      // 읽을 시간 — 말풍선 기본 상한(12초)보다 길게
+      p.say({ text, mood: n ? 'normal' : 'happy', ms: Math.min(25000, 5000 + text.length * 110), quiet: true, recap: true });
+      // 한가할 때만 살짝 반응 (끌려가는 중 · 대화 · 껴안기 중엔 말만)
+      if (!drag && !talk.active && !hug.busy(p) && ['idle', 'idle2', 'walk', 'sit', 'sleep'].indexOf(p.S.state) >= 0) {
+        p.setState('pet', 1.6);
+      }
+    },
+
+    /** Claude 알림이 오면 떠 있는 recap 은 양보한다 (말풍선은 한 줄로 기다리므로) */
+    yieldTo(p) {
+      const b = p.bubble;
+      if (b.current && b.current.recap) {
+        clearTimeout(b.timer);
+        b.timer = null;
+        b.next();
       }
     },
   };
@@ -976,6 +1168,26 @@
       items: [{ label: '혼잣말', value: 'act:chat', checked: chatOn }],
     });
 
+    // 할 일 — todo.md (메모장 · Claude Code 로 고쳐도 된다)
+    const open = todoState.items.filter((x) => !x.done).length;
+    const tItems = [
+      { label: '할 일 추가…', value: 'todo:add' },
+      { label: '지금 정리해줘', value: 'todo:recap' },
+      { label: 'todo.md 열기', value: 'todo:open' },
+      { label: '메모 붙이기…', value: 'todo:note' },
+    ];
+    if (!window.PetNotes.todoShown) tItems.push({ label: '할 일 카드 보이기', value: 'todo:card' });
+    tItems.push({ label: '메모 · 카드 숨기기', value: 'todo:hide', checked: window.PetNotes.hidden });
+    if (todoState.items.some((x) => x.done)) tItems.push({ label: '끝낸 것 지우기', value: 'todo:clear' });
+    sections.push({ title: '할 일' + (todoState.items.length ? ' · ' + open + '개 남음' : ''), items: tItems });
+    const every = (todoState.recap && todoState.recap.every) || 0;
+    sections.push({
+      title: '정각 알림 (평일 근무 시간)',
+      fold: 'recap',
+      items: [[0, '끄기'], [30, '30분마다'], [60, '1시간마다'], [120, '2시간마다']]
+        .map(([m, label]) => ({ label, value: 'recap:' + m, checked: every === m })),
+    });
+
     // Claude Code — 훅이 걸려 있으면 끝났을 때 · 허락이 필요할 때 알려 준다
     const cs = claudeState || {};
     const cItems = [];
@@ -985,6 +1197,8 @@
     } else {
       cItems.push({ label: cs.legacy ? '알림 연결하기 (예전 훅 바꾸기)' : '알림 연결하기', value: 'claude:on' });
     }
+    cItems.push({ label: '윈도우 알림 (허락 · 오류 · 기한 · 빌드 실패)', value: 'toast:' + (cs.toast ? 'off' : 'on'), checked: !!cs.toast });
+    if (inbox.items.length) cItems.push({ label: '최근 알림 보기' + (inbox.unread() ? ' (' + inbox.unread() + ')' : ''), value: 'act:inbox' });
     sections.push({ title: 'Claude Code' + (cs.connected ? ' · 연결됨' : ''), fold: cs.connected ? 'claude' : '', items: cItems });
     // 세션 현황 — 누르면 그 터미널 창으로 (↗ 는 창을 찾아 둔 세션)
     if (cs.connected && claudeSessions.length) {
@@ -1065,6 +1279,27 @@
         claudeState = await window.petAPI.claudeSetSpeak(!claudeState.speak);
         p.say({ text: claudeState.speak ? 'Claude 소식 다시 전할게' : 'Claude 소식은 잠깐 조용히 있을게', ms: 2600 });
       }
+    } else if (kind === 'todo') {
+      if (arg === 'add') todoState = await window.petAPI.todoAdd(window.PetNotes.addDefaults());
+      else if (arg === 'recap') window.petAPI.recapNow();
+      else if (arg === 'open') window.petAPI.todoOpen();
+      else if (arg === 'note') window.PetNotes.setData(await window.petAPI.notesAdd(window.PetNotes.spotNear(p.S.x)));
+      else if (arg === 'card') window.PetNotes.setData(await window.petAPI.notesSetTodoCard({ shown: true }));
+      else if (arg === 'hide') window.PetNotes.setData(await window.petAPI.notesSetHidden(!window.PetNotes.hidden));
+      else if (arg === 'clear') { todoState = await window.petAPI.todoClearDone(); p.say({ text: '끝낸 건 치웠어', ms: 2000, quiet: true }); }
+    } else if (kind === 'recap') {
+      todoState = await window.petAPI.recapSetEvery(parseInt(arg, 10));
+      const m = parseInt(arg, 10);
+      p.say({ text: m ? (m >= 60 ? m / 60 + '시간' : m + '분') + '마다 할 일 짚어 줄게' : '정각 알림 껐어', ms: 2400, quiet: true });
+    } else if (kind === 'inbox') {
+      if (arg === 'clear') { inbox.items = []; inbox.sync(); }
+      else {
+        const it = inbox.items.find((x) => x.id === arg);
+        if (it && it.sid) claude.focus(it.sid, p);
+      }
+    } else if (kind === 'toast') {
+      const on = await window.petAPI.toastSet(arg === 'on');
+      p.say({ text: on ? '급한 건 윈도우 알림으로도 띄울게' : '윈도우 알림은 끌게', ms: 2400, quiet: true });
     } else if (kind === 'csess') {
       claude.focus(arg, p);
     } else if (kind === 'cursor') {
@@ -1084,6 +1319,7 @@
       else if (arg === 'special') p.setState('special', 3);
       else if (arg === 'hug') { const pr = hug.pair(); if (pr) hug.start(pr[0], pr[1]); }
       else if (arg === 'talk') p.chatter.prod();
+      else if (arg === 'inbox') setTimeout(() => inbox.open(), 0);   // 이 메뉴가 닫힌 뒤에 연다
       else if (arg === 'chat') {
         chatOn = !chatOn;
         window.petAPI.setChat(chatOn);
@@ -1194,6 +1430,8 @@
     // 윈도우 팝업 메뉴처럼 그 클릭 한 번은 메뉴를 닫는 데 쓰이고 아래 창으로 가지 않는다.
     if (menu && menu.open) return true;
     if (bubbleAt(px, py)) return true;
+    if (inRect(inbox.rect, px, py)) return true;
+    if (window.PetNotes && window.PetNotes.hit(px, py)) return true;
     return !!petAt(px, py);
   }
 
@@ -1258,10 +1496,12 @@
     if (e.button !== 0 || !hitTest(e.clientX, e.clientY)) return;
     // 메뉴·말풍선 위 클릭은 UI가 처리한다 (드래그 시작하지 않는다)
     if (menu && inRect(menu.rect, e.clientX, e.clientY)) return;
+    if (inRect(inbox.rect, e.clientX, e.clientY)) { inbox.open(); return; }
     const bp = bubbleAt(e.clientX, e.clientY);
     if (bp) {
       // Claude 세션 말풍선이면 그 터미널로 간다
       const sid = bp.bubble.current && bp.bubble.current.sid;
+      if (bp.bubble.current && bp.bubble.current.inboxId) inbox.read(bp.bubble.current.inboxId);
       bp.bubble.dismiss();
       if (sid) claude.focus(sid, bp);
       return;
@@ -1340,6 +1580,7 @@
       for (const p of pets) p.update(dt);
       hug.tick(dt);
       cursorPlay.tick(dt);
+      inbox.place();
       talk.tick(dt);
       dark.tick(dt);
       for (const p of pets) p.render(dt);
@@ -1365,6 +1606,7 @@
   // ════════════════════════════════════════════════════════════
   function applyStage(s) {
     stage = s;
+    window.PetNotes.setStage(s);
     for (const p of pets) {
       p.S.x = clamp(p.S.x, s.workLeft + 60, s.workRight - 60);
       p.S.y = Math.min(p.S.y, s.ground);
@@ -1394,6 +1636,8 @@
     cursorPlay.mode = cfg.cursorMode || 'none';
 
     stage = await window.petAPI.getStage();
+    window.PetNotes.init(stage);
+    window.PetNotes.setData(await window.petAPI.notesGet());
     roster = await window.petAPI.listCharacters();
 
     const main = new Pet('main');
@@ -1410,8 +1654,20 @@
     }
 
     window.petAPI.onStage(applyStage);
-    window.petAPI.onSay((msg) => pets[0] && pets[0].say(msg));   // 외부 알림은 주인공이 말한다
+    window.petAPI.onSay((msg) => {                     // 외부 알림은 주인공이 말한다
+      if (!pets[0]) return;
+      if (msg.source) {                                 // 출처가 있으면 알림 카드 (빌드 · 기한)
+        msg.card = { source: msg.source, project: msg.project || '', level: msg.level || 'info', title: msg.text, line: msg.line || '', at: Date.now() };
+        msg.ms = msg.ms || 10000;
+        inbox.add(msg);
+      }
+      pets[0].say(msg);
+    });
     window.petAPI.onClaude((ev) => claude.on(ev));
+    window.petAPI.onTodo((st) => { todoState = st; window.PetNotes.setTodo(st); });
+    window.petAPI.onRecap((r) => recap.on(r));
+    todoState = await window.petAPI.todoGet();
+    window.PetNotes.setTodo(todoState);
     window.addEventListener('resize', () => pets.forEach((p) => p.view && p.view.resize()));
     requestAnimationFrame(frame);
 
@@ -1484,6 +1740,12 @@
       placeOnGround(p);
       p.setState('idle', 2);
       claude.on({ kind: cmd.slice(7), project: 'test', sec: 42, busy: 0 });
+    } else if (cmd.indexOf('notes:hidden:') === 0) {
+      window.PetNotes.setHidden(cmd.slice(13) === '1');
+    } else if (cmd === 'recap') {
+      window.petAPI.recapNow();          // 정각 recap 바로 보기 (--start=recap)
+    } else if (cmd === 'todo:add') {
+      todoState = await window.petAPI.todoAdd();
     } else if (cmd.indexOf('cursor:') === 0) {
       // 커서 놀이 바로 보기 (--start=cursor:chase | flee) — 저장하지 않는다
       cursorPlay.mode = cmd.slice(7);
@@ -1505,7 +1767,7 @@
 
   // 디버깅용
   window.__pets = pets;
-  window.__debug = { hug, talk, dark, claude, cursorPlay, cursor, setCompanion };   // 녹화 · 테스트 스크립트용
+  window.__debug = { hug, talk, dark, claude, recap, cursorPlay, cursor, setCompanion };   // 녹화 · 테스트 스크립트용
   if (location.search.indexOf('trace') >= 0) {
     setInterval(() => {
       for (const p of pets) {

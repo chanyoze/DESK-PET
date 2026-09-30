@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <title>DeskPet</title>
+  <style>
+    html, body { height: 100%; margin: 0; }
+    body {
+      display: flex; flex-direction: column; gap: 10px; box-sizing: border-box; padding: 14px;
+      background: #1d2130; color: #e8ecf5; font-family: 'Malgun Gothic', sans-serif; font-size: 13px;
+    }
+    #hint { color: #8f9bb3; font-size: 12px; line-height: 1.5; }
+    textarea {
+      flex: 1; resize: none; box-sizing: border-box; width: 100%; padding: 10px;
+      background: #0f121b; color: #e8ecf5; border: 1px solid #3a4058; border-radius: 8px;
+      font: inherit; font-size: 14px; line-height: 1.6; outline: none;
+    }
+    textarea:focus { border-color: #5b7cfa; }
+    .row { display: flex; align-items: center; gap: 8px; }
+    .spacer { flex: 1; }
+    .chip { width: 20px; height: 20px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; padding: 0; }
+    .chip.on { border-color: #fff; }
+    button.act { border: 0; border-radius: 7px; padding: 7px 14px; font: inherit; cursor: pointer; }
+    #save { background: #3b5bdb; color: #fff; }
+    #cancel { background: #2f3549; color: #c3cce0; }
+    .keys { color: #6b7590; font-size: 11px; }
+    #todoFields { display: none; flex-direction: column; gap: 8px; }
+    #todoFields label { color: #8f9bb3; font-size: 12px; min-width: 44px; }
+    input[type=date], input[type=time], input[type=text] {
+      background: #0f121b; color: #e8ecf5; border: 1px solid #3a4058; border-radius: 6px;
+      padding: 5px 7px; font: inherit; font-size: 13px; color-scheme: dark;
+    }
+    input[type=text] { flex: 1; }
+    input:disabled { opacity: 0.4; }
+    .presets button { background: #2f3549; color: #c3cce0; border: 0; border-radius: 10px; padding: 3px 9px; font: inherit; font-size: 11.5px; cursor: pointer; }
+    .presets button:hover { background: #3b4460; }
+    .presets { flex-wrap: wrap; }
+    .presets .del { margin-left: 5px; color: #8f9bb3; visibility: hidden; }
+    .presets .pre:hover .del { visibility: visible; }
+    .presets .del:hover { color: #ff9c9c; }
+    .presets .add { background: transparent; border: 1px dashed #4a5370; color: #8f9bb3; }
+  </style>
+</head>
+<body>
+  <div id="hint"></div>
+  <div id="todoFields">
+    <div class="row">
+      <label>날짜</label>
+      <input type="date" id="date">
+      <label style="min-width:0"><input type="checkbox" id="backlog"> 언젠가 (기약 없음)</label>
+    </div>
+    <div class="row">
+      <label>분류</label>
+      <input type="text" id="category" list="cats" placeholder="없으면 비워 두기 — 오전 · 오후 · 3시 전까지 …">
+      <datalist id="cats"></datalist>
+    </div>
+    <div class="row presets" id="presets"><label></label></div>
+    <div class="row">
+      <label>기한</label>
+      <input type="date" id="dueDate">
+      <input type="time" id="dueTime">
+      <span class="keys">비우면 없음 · 분류 이름에 시각이 있으면 그 시각</span>
+    </div>
+  </div>
+  <textarea id="text" spellcheck="false"></textarea>
+  <div class="row">
+    <div id="colors" class="row"></div>
+    <span class="spacer"></span>
+    <span class="keys">Ctrl+Enter 저장 · Esc 취소</span>
+    <button class="act" id="cancel">취소</button>
+    <button class="act" id="save">저장</button>
+  </div>
+  <script>
+    // 메모 색 — notes.js 의 NOTE_COLORS 와 같은 이름
+    const COLORS = { yellow: '#f6e58d', pink: '#f8b4c8', green: '#b8e6b0', blue: '#a9d2f5', gray: '#d5d8e0' };
+    let color = 'yellow';
+    const ta = document.getElementById('text');
+    const $ = (id) => document.getElementById(id);
+    let mode = 'note';
+    const save = () => {
+      const r = { text: ta.value, color };
+      if (mode === 'todo') {
+        r.backlog = $('backlog').checked;
+        r.date = r.backlog ? null : ($('date').value || null);
+        r.category = $('category').value.trim() || null;
+        const dd = $('dueDate').value, dt = $('dueTime').value;
+        // 시각만 적으면 그 날짜의 시각 (언젠가면 오늘 날짜로)
+        const d = new Date();
+        const today = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+        r.due = dd || dt ? (dd || r.date || today) + (dt ? ' ' + dt : '') : null;
+      }
+      window.editorAPI.done(r);
+    };
+    const cancel = () => window.editorAPI.done(null);
+    document.getElementById('save').onclick = save;
+    document.getElementById('cancel').onclick = cancel;
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') cancel();
+      else if (e.key === 'Enter' && e.ctrlKey) save();
+    });
+    window.editorAPI.init().then((o) => {
+      if (!o) return;
+      document.title = o.title || 'DeskPet';
+      document.getElementById('hint').textContent = o.hint;
+      ta.value = o.text;
+      color = COLORS[o.color] ? o.color : 'yellow';
+      mode = o.mode;
+      if (o.mode === 'todo') {
+        const t = o.todo || {};
+        $('todoFields').style.display = 'flex';
+        $('date').value = t.date || '';
+        $('backlog').checked = !!t.backlog;
+        $('date').disabled = !!t.backlog;
+        $('backlog').onchange = () => { $('date').disabled = $('backlog').checked; };
+        $('category').value = t.category || '';
+        // 등록한 분류 (버튼) — 직접 추가 · 삭제한다. 파일에만 있는 분류는 자동완성 목록에만
+        let saved = (t.saved || []).slice();
+        const renderCats = () => {
+          $('cats').innerHTML = '';
+          for (const c of [...new Set(saved.concat(t.categories || []))]) {
+            const op = document.createElement('option');
+            op.value = c;
+            $('cats').appendChild(op);
+          }
+          $('presets').querySelectorAll('.pre, .add').forEach((x) => x.remove());
+          for (const c of saved) {
+            const b = document.createElement('button');
+            b.className = 'pre';
+            b.textContent = c;
+            b.title = '누르면 이 분류로 · × 로 목록에서 빼기 (적어 둔 할 일은 그대로)';
+            b.onclick = () => { $('category').value = c; ta.focus(); };
+            const x = document.createElement('span');
+            x.className = 'del';
+            x.textContent = '×';
+            x.onclick = (e) => {
+              e.stopPropagation();
+              saved = saved.filter((s) => s !== c);
+              window.editorAPI.setCategories(saved);
+              renderCats();
+            };
+            b.appendChild(x);
+            $('presets').appendChild(b);
+          }
+          const add = document.createElement('button');
+          add.className = 'add';
+          add.textContent = '+ 등록';
+          add.title = '분류 칸에 쓴 이름을 버튼으로 등록';
+          add.onclick = () => {
+            const v = $('category').value.trim();
+            if (!v) { $('category').focus(); $('category').placeholder = '여기에 이름을 쓰고 + 등록'; return; }
+            if (!saved.includes(v)) {
+              saved.push(v);
+              window.editorAPI.setCategories(saved);
+              renderCats();
+            }
+          };
+          $('presets').appendChild(add);
+        };
+        renderCats();
+      }
+      if (o.mode === 'note') {
+        const box = document.getElementById('colors');
+        for (const [name, hex] of Object.entries(COLORS)) {
+          const b = document.createElement('button');
+          b.className = 'chip' + (name === color ? ' on' : '');
+          b.style.background = hex;
+          b.title = name;
+          b.onclick = () => {
+            color = name;
+            box.querySelectorAll('.chip').forEach((x) => x.classList.toggle('on', x === b));
+            ta.focus();
+          };
+          box.appendChild(b);
+        }
+      }
+      ta.focus();
+      ta.setSelectionRange(ta.value.length, ta.value.length);
+    });
+  </script>
+</body>
+</html>

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, screen, ipcMain, Tray, Menu, nativeImage } = require('electron');
+const { app, BrowserWindow, screen, ipcMain, Tray, Menu, nativeImage, shell, Notification } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { pathToFileURL } = require('url');
@@ -6,6 +6,8 @@ const settings = require('./settings');
 const notify = require('./notify-server');
 const claudeHooks = require('./claude-hooks');
 const psScripts = require('./ps-scripts');
+const notesStore = require('./notes-store');
+const editorWindow = require('./editor-window');
 
 const DEV = process.argv.includes('--dev');
 
@@ -324,6 +326,10 @@ function buildTrayMenu() {
         },
       })),
     },
+    { label: '할 일 추가…', click: () => win?.webContents.send('pet:command', 'todo:add') },
+    { label: '지금 할 일 정리해줘', click: () => sendRecap('manual') },
+    // 화면 공유 · 회의 때 — 캐릭터를 못 잡아도 여기서 숨길 수 있게
+    { label: '메모 · 할 일 카드 숨기기', type: 'checkbox', checked: !!settings.load().notesHidden, click: (it) => setNotesHidden(it.checked) },
     { label: '가운데로 불러오기', click: () => win?.webContents.send('pet:command', 'recall') },
     { label: '깨우기', click: () => win?.webContents.send('pet:command', 'wake') },
     { label: '다음 캐릭터', click: () => win?.webContents.send('pet:command', 'next') },
@@ -349,6 +355,139 @@ function createTray() {
  * 20초마다 훑어서 시간이 된 것을 말풍선으로 띄운다.
  * at 이 "HH:MM" 이면 매일, 숫자면 그 시각(epoch ms)에 한 번.
  */
+// ════════════════════════════════════════════════════════════
+//  할 일 · 정각 recap · 메모
+// ════════════════════════════════════════════════════════════
+/**
+ * 할 일은 userData 의 todo.md (마크다운 체크리스트) — 앱 밖에서 고쳐도 된다 (메모장 · Claude Code).
+ * 폴더를 지켜보다가 바뀌면 다시 읽어서 렌더러에 보낸다. 에디터는 임시 파일에 쓰고 이름을 바꾸는
+ * 경우가 많아서 파일이 아니라 폴더를 본다. 한 번 저장에 이벤트가 여러 번 오므로 300ms 모아서 읽는다.
+ *
+ * recap: 정해 둔 간격(기본 60분)마다 정각 기준으로, 근무 시간(기본 평일 9~18시)에만
+ * 캐릭터가 남은 할 일을 말해 준다. 설정 recap = { every, from, to, weekdays } (every 0 = 끔)
+ */
+const todoFile = () => path.join(app.getPath('userData'), 'todo.md');
+const notesFile = () => path.join(app.getPath('userData'), 'notes.json');
+const RECAP_DEFAULT = { every: 60, from: 9, to: 18, weekdays: true };
+const recapCfg = () => ({ ...RECAP_DEFAULT, ...(settings.load().recap || {}) });
+
+let todo = { items: [], exists: false };
+let todoWatcher = null;
+let todoTimer = null;
+
+/** 다시 읽고, 새로 끝낸 항목을 오늘 끝낸 수에 더한 뒤 렌더러에 알린다 */
+function refreshTodo() {
+  const prev = new Map(todo.items.map((x) => [x.text, x.done]));
+  todo = notesStore.load(todoFile());
+  const newlyDone = todo.items.filter((x) => x.done && prev.get(x.text) === false).length;
+  if (newlyDone) {
+    const today = new Date().toDateString();
+    const log = settings.load().todoDone || {};
+    settings.save({ todoDone: { date: today, n: (log.date === today ? log.n : 0) + newlyDone } });
+  }
+  win?.webContents.send('pet:todo', todoState());
+  return todoState();
+}
+
+function todoState() {
+  const log = settings.load().todoDone || {};
+  return {
+    items: todo.items,
+    categories: todo.categories || [],
+    today: notesStore.ymd(new Date()),
+    doneToday: log.date === new Date().toDateString() ? log.n : 0,
+    file: todoFile(),
+    recap: recapCfg(),
+  };
+}
+
+function watchTodo() {
+  const dir = path.dirname(todoFile());
+  const name = path.basename(todoFile());
+  try {
+    todoWatcher?.close();
+    todoWatcher = fs.watch(dir, (_ev, f) => {
+      if (f && f !== name) return;
+      clearTimeout(todoTimer);
+      todoTimer = setTimeout(refreshTodo, 300);
+    });
+    todoWatcher.on('error', () => setTimeout(watchTodo, 2000));   // 폴더가 잠깐 막히면 다시 건다
+  } catch (e) {
+    console.error('[todo] 지켜보기 실패:', e.message);
+  }
+}
+
+/** recap 보내기 — reason: 'scheduled' | 'manual' */
+/**
+ * recap 보내기 — reason: 'scheduled' | 'manual'
+ * 대상은 오늘 날짜의 안 끝낸 일 + 지난 날짜에서 밀린 일. 언젠가(백로그)는 개수만.
+ */
+function sendRecap(reason) {
+  refreshTodo();
+  const today = notesStore.ymd(new Date());
+  const open = todo.items.filter((x) => !x.done && !x.backlog && x.date && x.date <= today)
+    .map((x) => ({ text: x.text, date: x.date, due: x.due, category: x.category, late: x.date < today }));
+  const todayAll = todo.items.filter((x) => x.date === today).length;
+  const backlogOpen = todo.items.filter((x) => x.backlog && !x.done).length;
+  console.log('[todo] recap', reason, '남은', open.length, '언젠가', backlogOpen);
+  win?.webContents.send('pet:recap', {
+    reason, open, todayAll, backlogOpen, total: todo.items.length, doneToday: todoState().doneToday, now: Date.now(),
+  });
+}
+
+/**
+ * 기한 알림 — 시각이 있는 안 끝낸 일은 10분 전 · 기한이 되면 한 번씩 말해 준다.
+ * recap 과 달리 근무 시간 · 요일을 따지지 않는다 (기한을 적었다는 건 알려 달라는 뜻이라서).
+ */
+const dueFired = new Set();
+function dueTick(now) {
+  for (const it of todo.items) {
+    if (it.done || !it.due || it.due.length < 16) continue;          // 시각이 있는 기한만
+    const at = new Date(it.due.replace(' ', 'T') + ':00').getTime();
+    const left = at - now.getTime();
+    const key = (k) => k + '|' + it.due + '|' + it.text;
+    if (left > 0 && left <= 10 * 60e3 && !dueFired.has(key('soon'))) {
+      dueFired.add(key('soon'));
+      const t = it.text + ' — ' + Math.ceil(left / 60e3) + '분 남음 (~' + it.due.slice(11) + ')';
+      win?.webContents.send('pet:say', { text: t, source: '할 일', level: 'due', mood: 'alert', ms: 12000 });
+      toast('할 일 기한 ' + Math.ceil(left / 60e3) + '분 전', it.text + ' (~' + it.due.slice(11) + ')');
+    } else if (left <= 0 && left > -5 * 60e3 && !dueFired.has(key('now'))) {
+      dueFired.add(key('now'));
+      win?.webContents.send('pet:say', { text: it.text + ' — 기한이야 (~' + it.due.slice(11) + ')', source: '할 일', level: 'due', mood: 'alert', ms: 12000 });
+      toast('할 일 기한', it.text + ' (~' + it.due.slice(11) + ')');
+    }
+  }
+  if (dueFired.size > 500) dueFired.clear();
+}
+
+const recapFired = new Set();
+function recapTick(now) {
+  const r = recapCfg();
+  if (!r.every) return;
+  const day = now.getDay();
+  if (r.weekdays && (day === 0 || day === 6)) return;
+  const h = now.getHours(), m = now.getMinutes();
+  if (h < r.from || h > r.to || (h === r.to && m > 0)) return;       // 9:00 ~ 18:00 (18:00 포함 — 퇴근 전 마지막 정리)
+  if ((h * 60 + m) % r.every !== 0) return;
+  const key = now.toDateString() + ' ' + h + ':' + m;
+  if (recapFired.has(key)) return;
+  recapFired.add(key);
+  if (recapFired.size > 64) recapFired.delete(recapFired.values().next().value);
+  sendRecap('scheduled');
+}
+
+/** 입력 창을 캐릭터가 있는 모니터에 띄운다 */
+function openEditor(opts) {
+  return editorWindow.open({ display: targetDisplay(), ...opts });
+}
+
+/** todo.md 를 기본 프로그램으로 — .md 연결이 없으면 메모장 */
+async function openTodoFile() {
+  notesStore.ensure(todoFile());
+  const err = await shell.openPath(todoFile());
+  if (err) require('child_process').spawn('notepad.exe', [todoFile()], { detached: true, stdio: 'ignore' }).unref();
+}
+
 function startReminderLoop() {
   const fired = new Set();       // 오늘 이미 울린 매일 리마인더
   let lastDay = new Date().getDate();
@@ -379,6 +518,8 @@ function startReminderLoop() {
       }
     }
     if (changed) settings.save({ reminders: list.filter((r) => !r.done) });
+    recapTick(now);
+    dueTick(now);
   }, 20000);
 }
 
@@ -461,6 +602,8 @@ function onClaudeEvent(ev, kind) {
   }
   if (out) {
     if (!settings.load().speakOnClaude && out.kind !== 'start') out.quiet = true;
+    if (out.kind === 'permission') toast('Claude · ' + (s.project || '세션'), '허락이 필요해 — 눌러서 터미널로', sid);
+    else if (out.kind === 'fail') toast('Claude · ' + (s.project || '세션'), '오류로 멈췄어 — 눌러서 터미널로', sid);
     win?.webContents.send('pet:claude', { ...out, sid, project: s.project, busy: busyCount() });
   }
   // 창을 아직 모르면 훅에게 찾아 달라고 한다
@@ -510,7 +653,51 @@ function claudeStatus() {
   return {
     ...claudeHooks.status({ scriptPath: claudeHookScript() }),
     speak: cfg.speakOnClaude !== false,
+    toast: cfg.toastOn !== false,
   };
+}
+
+/**
+ * 윈도우 알림(토스트) — 메인 모니터 오른쪽 아래, 알림 센터에 남는다.
+ * 급한 것만: Claude 허락 요청 · 오류, 할 일 기한, 빌드 실패. (작업 끝남은 말풍선만 — 잦아서)
+ * 누르면 그 세션의 터미널로 (sid 가 있을 때).
+ */
+function toast(title, body, sid) {
+  if (settings.load().toastOn === false || !Notification.isSupported()) return;
+  try {
+    const n = new Notification({ title, body, silent: false, icon: path.join(__dirname, '..', 'assets', 'icon.png') });
+    if (sid) n.on('click', () => focusClaudeSession(sid));
+    n.show();
+  } catch (e) {
+    console.error('[toast] 실패:', e.message);
+  }
+}
+
+/**
+ * 트레이 아이콘 빨간 점 — 안 읽은 알림이 있으면 (렌더러가 개수를 알려 준다).
+ * 작업 표시줄 버튼이 없는 창이라 깜빡일 수가 없어서 트레이로 대신한다.
+ */
+let trayIcons = null;
+function setTrayAlert(n) {
+  if (!tray) return;
+  if (!trayIcons) {
+    const base = nativeImage.createFromPath(path.join(__dirname, '..', 'assets', 'tray.png'));
+    const { width: w, height: h } = base.getSize();
+    const bmp = Buffer.from(base.toBitmap());           // BGRA
+    const r = Math.max(3, Math.round(w * 0.22)), cx = w - r - 1, cy = r + 1;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const d = Math.hypot(x - cx, y - cy);
+        if (d > r + 0.5) continue;
+        const o = (y * w + x) * 4;
+        const edge = d > r - 1;                           // 흰 테두리로 아이콘과 떼어 보이게
+        bmp[o] = edge ? 255 : 48; bmp[o + 1] = edge ? 255 : 62; bmp[o + 2] = edge ? 255 : 229; bmp[o + 3] = 255;
+      }
+    }
+    trayIcons = { base, alert: nativeImage.createFromBitmap(bmp, { width: w, height: h }) };
+  }
+  tray.setImage(n ? trayIcons.alert : trayIcons.base);
+  tray.setToolTip(n ? 'DeskPet — 놓친 알림 ' + n + '개' : 'DeskPet');
 }
 
 /**
@@ -530,6 +717,7 @@ if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.whenReady().then(() => {
+    app.setAppUserModelId('com.chanyoze.deskpet');     // 윈도우 알림에 DeskPet 으로 뜨게
     const cfg = settings.load();
     if (!currentCharacter) currentCharacter = cfg.character || null;
 
@@ -538,7 +726,8 @@ if (!app.requestSingleInstanceLock()) {
 
     // 외부에서 말을 시킬 수 있는 로컬 서버 (Claude Code 훅, 빌드 스크립트 등)
     notify.start(cfg.notifyPort, (msg) => {
-      console.log('[notify] say:', msg.mood, msg.text);
+      console.log('[notify] say:', msg.mood, msg.source || '', msg.text);
+      if (msg.source && msg.level === 'fail') toast(msg.source + ' 실패', msg.text);
       win?.webContents.send('pet:say', msg);
     }, onClaudeEvent);
 
@@ -566,6 +755,8 @@ if (!app.requestSingleInstanceLock()) {
     }
 
     startReminderLoop();
+    refreshTodo();
+    watchTodo();
 
     // 해상도/작업표시줄이 바뀌면 창 크기와 바닥선을 다시 맞춘다
     const resync = () => {
@@ -642,6 +833,88 @@ ipcMain.handle('claude:sessions', () => claudeSessionList());
 ipcMain.handle('claude:focus', (_e, sid) => focusClaudeSession(sid));
 ipcMain.handle('settings:setCursorMode', (_e, m) =>
   settings.save({ cursorMode: ['chase', 'flee'].includes(m) ? m : 'none' }));
+// ── 할 일 · recap ────────────────────────────────────────────
+ipcMain.handle('todo:get', () => refreshTodo());
+/** 할 일 추가 — defaults 는 카드에서 보고 있던 날짜 · 언젠가 · 분류 */
+ipcMain.handle('todo:add', async (_e, defaults) => {
+  const d = defaults || {};
+  const r = await openEditor({
+    mode: 'todo', title: '할 일 추가',
+    hint: '한 줄에 하나씩.',
+    todo: { date: d.date || notesStore.ymd(new Date()), backlog: !!d.backlog, category: d.category || '', categories: todo.categories || [], saved: todoCats() },
+  });
+  if (r && r.text.trim()) {
+    notesStore.add(todoFile(), { text: r.text, date: r.date, backlog: r.backlog, category: r.category, due: r.due });
+  }
+  return refreshTodo();
+});
+/** 등록한 분류 (입력 창의 버튼) — 처음엔 예시 몇 개, 사용자가 + 등록 · × 로 고친다 */
+const todoCats = () => settings.load().todoCategories || ['오전', '오후', '3시 전까지', '퇴근 전'];
+ipcMain.handle('todoCats:set', (_e, list) => {
+  const clean = [...new Set((Array.isArray(list) ? list : []).map((x) => String(x).trim().slice(0, 30)).filter(Boolean))].slice(0, 20);
+  settings.save({ todoCategories: clean });
+  return clean;
+});
+ipcMain.handle('todo:toggle', (_e, i, text) => { notesStore.toggle(todoFile(), i, text); return refreshTodo(); });
+ipcMain.handle('todo:clearDone', () => { notesStore.clearDone(todoFile()); return refreshTodo(); });
+ipcMain.handle('todo:open', () => openTodoFile());
+ipcMain.handle('recap:now', () => sendRecap('manual'));
+
+// ── 스티커 메모 · 카드 ──────────────────────────────────────
+// 메모는 notes.json [{ id, text, color, x, y, collapsed }], 할 일 카드 자리 · 숨김은 설정(todoCard · notesHidden)
+function notesState() {
+  const cfg = settings.load();
+  return { notes: notesStore.loadNotes(notesFile()), todoCard: cfg.todoCard || {}, hidden: !!cfg.notesHidden };
+}
+function setNotesHidden(v) {
+  settings.save({ notesHidden: !!v });
+  win?.webContents.send('pet:command', 'notes:hidden:' + (v ? 1 : 0));
+}
+ipcMain.handle('notes:get', () => notesState());
+ipcMain.handle('notes:add', async (_e, pos) => {
+  const r = await openEditor({ mode: 'note', title: '메모', hint: '화면에 붙여 둘 메모. 색을 고를 수 있다.' });
+  if (r && r.text.trim()) {
+    const list = notesStore.loadNotes(notesFile());
+    list.push({ id: 'n' + Date.now().toString(36), text: r.text, color: r.color, x: pos && pos.x, y: pos && pos.y, collapsed: false });
+    notesStore.saveNotes(notesFile(), list);
+    if (settings.load().notesHidden) setNotesHidden(false);   // 숨겨 둔 채 새로 쓰면 안 보여서 헷갈린다
+  }
+  return notesState();
+});
+ipcMain.handle('notes:edit', async (_e, id) => {
+  const n = notesStore.loadNotes(notesFile()).find((x) => x.id === id);
+  if (!n) return notesState();
+  const r = await openEditor({ mode: 'note', title: '메모 편집', text: n.text, color: n.color, hint: '비우고 저장하면 그대로 둔다 (지우려면 카드의 ×).' });
+  if (r && r.text.trim()) {
+    const list = notesStore.loadNotes(notesFile()).map((x) => (x.id === id ? { ...x, text: r.text, color: r.color } : x));
+    notesStore.saveNotes(notesFile(), list);
+  }
+  return notesState();
+});
+ipcMain.handle('notes:update', (_e, id, patch) => {
+  const allowed = {};
+  for (const k of ['x', 'y', 'w', 'h', 'collapsed']) if (patch && k in patch) allowed[k] = patch[k];
+  const list = notesStore.loadNotes(notesFile()).map((x) => (x.id === id ? { ...x, ...allowed } : x));
+  notesStore.saveNotes(notesFile(), list);
+  return notesState();
+});
+ipcMain.handle('notes:remove', (_e, id) => {
+  notesStore.saveNotes(notesFile(), notesStore.loadNotes(notesFile()).filter((x) => x.id !== id));
+  return notesState();
+});
+ipcMain.handle('notes:setTodoCard', (_e, patch) => {
+  const allowed = {};
+  for (const k of ['x', 'y', 'w', 'h', 'collapsed', 'shown']) if (patch && k in patch) allowed[k] = patch[k];
+  settings.save({ todoCard: { ...(settings.load().todoCard || {}), ...allowed } });
+  return notesState();
+});
+ipcMain.handle('notes:setHidden', (_e, v) => { setNotesHidden(v); return notesState(); });
+ipcMain.handle('recap:setEvery', (_e, every) => {
+  settings.save({ recap: { ...recapCfg(), every: [0, 30, 60, 120].includes(every) ? every : 60 } });
+  return refreshTodo();
+});
+ipcMain.on('inbox:count', (_e, n) => setTrayAlert(Number(n) || 0));
+ipcMain.handle('toast:set', (_e, v) => { settings.save({ toastOn: !!v }); return !!v; });
 ipcMain.handle('autostart:get', () => autoStartStatus());
 ipcMain.handle('autostart:set', (_e, on) => {
   if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: !!on, path: loginExe() });
