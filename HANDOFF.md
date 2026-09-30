@@ -24,9 +24,13 @@ v0.10.0 공개 릴리스(에셋 없음) + **개인 빌드 exe**(에셋 포함, �
    - 회사 PC에도 이제 캐릭터가 있다 (0.10 exe 의 app.asar 에서 꺼내 `%APPDATA%\deskpet\characters` 에 둠, 개인 용도)
      → `npm run dist:private` 로 여기서 바로 개인 빌드 가능
    - 창 앞으로 가져오기는 실제 Claude 세션(Windows Terminal)에서 누르는 확인이 남았다
-   - **집 PC 설치본 맞추기**: 레시피에만 반영된 것 — `claude` 대사, 달리기 · 권총 걷기에서 팔 잘린 칸 제외(2026-09-30).
-     집 PC `%APPDATA%\deskpet\characters\termina-*\character.json` 에 레시피의 `manifest.claude` 와
-     `manifest.clips.run` · `walk_pistol` 을 옮기거나 게임에서 다시 추출할 것
+   - **집 PC에서 "레시피 기준으로 맞춰줘" 요청이 오면** (2026-09-30 회사 세션에서 합의):
+     1. `git pull` → `npm install`
+     2. 설치본 `%APPDATA%\deskpet\characters\termina-*\character.json` 에 레시피의 `manifest.claude` 와
+        `manifest.clips.run` · `walk_pistol` 을 그대로 옮긴다 (레시피에만 반영된 것 — Claude 대사, 팔 잘린 칸 제외).
+        다른 키는 건드리지 말 것. 게임이 있으니 다시 추출해도 되지만 그러면 레시피 밖에서 손본 게 있으면 사라진다
+     3. `npm run dist:private` → 새 exe 로 바꿔 켜기 (머리 위 1px 선 수정은 렌더러 코드라 exe 만 새로 만들면 된다)
+     4. exe 메뉴 → Claude Code → 알림 연결하기 (예전 say.js 훅이 새 방식으로 바뀐다)
    - 칸을 뺀 달리기는 fps(14)를 그대로 둬서 한 바퀴가 짧아졌다 — 어색하면 남은 칸 수에 맞춰 fps 를 낮출 것
    - 메뉴에서 "알림 연결하기" 를 누른 뒤 실제 마우스로 말풍선 · 달려오기를 눈으로 확인할 것
    - 자동 시작은 exe 에서만 메뉴에 보인다 — 실제 재부팅 후 뜨는지 확인 안 됨
