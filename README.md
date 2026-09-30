@@ -324,66 +324,6 @@ npm run dist:private -- termina-marina   # 골라서
 - **게임 에셋이 들어간 파일이다. 나만 쓰는 PC에 복사하는 용도로만 쓰고, 릴리스나 공유는 하지 않는다.**
   `characters/*` · `preset.json` · `dist/` 는 전부 gitignore 되어 있다
 
-## 개인 빌드 (뽑아 둔 캐릭터를 exe에 넣기)
-
-게임이 없는 다른 PC(예: 회사 PC)에서 쓰려면, 내 PC에서 뽑아 둔 캐릭터를 exe 안에 넣어 빌드한다.
-
-\
-> deskpet@0.10.0 dist:private
-> node tools/build-private.js
-
-[private] 캐릭터: termina-marina
-[private] 캐릭터: termina-samarie
-[private] 기본 설정: {"character":"termina-marina","companion":"termina-samarie","tone":"dark","sizeScale":0.6,"modes":{}}
-  • electron-builder  version=26.15.3 os=10.0.22621
-  • loaded configuration  file=package.json ("build" field)
-  • executing @electron/rebuild  electronVersion=44.2.0 arch=x64 buildFromSource=false workspaceRoot=C:studydeskpet projectDir=./ appDir=./
-  • installing native dependencies  arch=x64
-  • completed installing native dependencies
-  • packaging       platform=win32 arch=x64 electron=44.2.0 appOutDir=distprivatewin-unpacked
-  • downloaded      label=electron progress=100%
-  • downloaded electron zip extracted successfully  output=C:studydeskpetdistprivatewin-unpacked
-  • searching for node modules  pm=npm searchDir=C:studydeskpet
-  • searching for node modules  pm=traversal searchDir=C:studydeskpet
-  • using manual traversal of node_modules to build dependency tree
-  • no node modules returned while searching directories  searchDirectories=[""]
-  • updating asar integrity executable resource  executablePath=distprivatewin-unpackedDeskPet.exe
-  • signing with signtool.exe  path=distprivatewin-unpackedDeskPet.exe
-  • building        target=portable file=distprivateDeskPet-private-0.10.0.exe archs=x64
-  • signing with signtool.exe  path=distprivatewin-unpackedesourceselevate.exe
-  • signing with signtool.exe  path=distprivateDeskPet-private-0.10.0.exe
-[private] 완료: C:studydeskpetdistprivateDeskPet-private-0.10.0.exe
-[private] 이 파일은 나만 쓰는 PC에만 복사할 것 (배포 금지)
-
-> deskpet@0.10.0 dist:private
-> node tools/build-private.js termina-marina
-
-[private] 캐릭터: termina-marina
-[private] 기본 설정: {"character":"termina-marina","companion":null,"tone":"dark","sizeScale":0.6,"modes":{}}
-  • electron-builder  version=26.15.3 os=10.0.22621
-  • loaded configuration  file=package.json ("build" field)
-  • executing @electron/rebuild  electronVersion=44.2.0 arch=x64 buildFromSource=false workspaceRoot=C:studydeskpet projectDir=./ appDir=./
-  • installing native dependencies  arch=x64
-  • completed installing native dependencies
-  • packaging       platform=win32 arch=x64 electron=44.2.0 appOutDir=distprivatewin-unpacked
-  • downloaded      label=electron progress=100%
-  • downloaded electron zip extracted successfully  output=C:studydeskpetdistprivatewin-unpacked
-  • searching for node modules  pm=npm searchDir=C:studydeskpet
-  • searching for node modules  pm=traversal searchDir=C:studydeskpet
-  • using manual traversal of node_modules to build dependency tree
-  • no node modules returned while searching directories  searchDirectories=[""]
-  • updating asar integrity executable resource  executablePath=distprivatewin-unpackedDeskPet.exe
-  • signing with signtool.exe  path=distprivatewin-unpackedDeskPet.exe
-  • building        target=portable file=distprivateDeskPet-private-0.10.0.exe archs=x64
-  • signing with signtool.exe  path=distprivatewin-unpackedesourceselevate.exe
-  • signing with signtool.exe  path=distprivateDeskPet-private-0.10.0.exe
-[private] 완료: C:studydeskpetdistprivateDeskPet-private-0.10.0.exe
-[private] 이 파일은 나만 쓰는 PC에만 복사할 것 (배포 금지)
-- 결과물은  — 파일 하나, 설치 없음
-- 지금 설정(주인공 · 동료 · 분위기 · 크기 · 무장)이  으로 들어가서, 새 PC에서 처음 켜도 같은 상태로 시작한다
-- **게임 에셋이 들어간 파일이다. 나만 쓰는 PC에 복사하는 용도로만 쓰고, 릴리스나 공유는 하지 않는다.**
-   ·  ·  는 전부 gitignore 되어 있다
-
 ## 외부에서 말 시키기
 
 앱은 `127.0.0.1:45678` 에만 바인딩된 작은 HTTP 서버를 연다. 빌드 스크립트든
