@@ -40,10 +40,10 @@
     climb: 'Move',
   };
 
-  const STILL = ['idle', 'idle2', 'sit', 'sleep', 'pet', 'special', 'hug', 'hugged', 'down', 'recover', 'bloodcast', 'vanish'];
+  const STILL = ['idle', 'idle2', 'sit', 'sleep', 'pet', 'special', 'hug', 'hugged', 'down', 'recover', 'bloodcast', 'vanish', 'pounce'];
   const MOVING = ['walk', 'run', 'approach', 'nightmare', 'rush'];
   const RESTING = ['idle', 'idle2', 'walk', 'run', 'sit', 'sleep', 'pet', 'special', 'hug',
-    'down', 'recover', 'nightmare', 'bloodcast'];
+    'down', 'recover', 'nightmare', 'bloodcast', 'pounce'];
   /** 원작처럼 분위기에서만 나오는 상태 — 끝나면 정해진 다음 상태로 간다 */
   const DARK_NEXT = { down: 'recover', nightmare: 'recover', recover: 'idle' };
   /** 껴안기를 시작해도 되는 상태 — 자거나 연출 중이면 방해하지 않는다 */
@@ -194,6 +194,8 @@
       if (state === 'approach' || state === 'rush') state = this.canRun() ? 'run' : 'walk';
       if (state === 'hugged') state = 'idle';
       if (state === 'vanish') state = 'idle';
+      // Claude 가 일하는 동안 앉아서 기다리는 대신 쓸 동작이 있으면 그걸로 (animations.work)
+      if (state === 'sit' && map.work && this.role === 'main' && claude.working()) state = 'work';
       let v = (this.mode && map[state + '@' + this.mode]) || map[state] || DEFAULT_ANIM[state] || state;
       // 배열이면 변형 풀 — 이 상태에 들어갈 때마다 하나를 고른다
       if (Array.isArray(v)) {
@@ -333,8 +335,11 @@
         S.until -= dt;
         if (Math.abs(dx) < this.halfWidth() * 0.6 || S.until <= 0) {
           S.facing = S.dir;
+          const why = this.rushWhy;
           this.rushWhy = '';
-          if (this.rushEnd === 'idle') this.setState('idle', rand(1, 2));
+          // 커서를 쫓아가 닿으면 달려드는 동작이 있는 캐릭터는 한 번 덤빈다 (animations.pounce)
+          if (why === 'chase' && this.has('pounce') && Math.abs(dx) < this.halfWidth() * 0.6) this.setState('pounce', 0.8);
+          else if (this.rushEnd === 'idle') this.setState('idle', rand(1, 2));
           else this.setState('pet', 2.2);
         }
       }

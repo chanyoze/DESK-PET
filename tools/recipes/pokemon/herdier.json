@@ -1,0 +1,79 @@
+{
+  "id": "pokemon-herdier",
+  "source": "PMDCollab SpriteCollab",
+  "dex": "0507",
+  "scale": 3,
+  "credits": [
+    "Herdier (#0507) sprites: LightBlueBlaze",
+    "Portraits: baronessfaron, Caitemis",
+    "PMDCollab SpriteCollab — https://sprites.pmdcollab.org/"
+  ],
+  "clips": {
+    "idle": { "anim": "Idle", "left": 7, "right": 1 },
+    "idle2": { "anim": "Idle", "row": 0 },
+    "walk": { "anim": "Walk", "left": 6, "right": 2 },
+    "run": { "anim": "Walk", "left": 6, "right": 2, "speed": 1.8 },
+    "sleep": { "anim": "Sleep", "row": 0 },
+    "pet": { "anim": "RearUp", "left": 7, "right": 1 },
+    "hop": { "anim": "Hop", "left": 7, "right": 1 },
+    "spin": { "anim": "Rotate", "row": 0 },
+    "hurt": { "anim": "Hurt", "left": 7, "right": 1 },
+    "work": { "anim": "Charge", "row": 0 },
+    "pounce": { "anim": "Attack", "left": 6, "right": 2, "once": true }
+  },
+  "manifest": {
+    "name": "하데리어",
+    "walkSpeed": 44,
+    "runSpeed": 120,
+    "animations": {
+      "idle": "idle",
+      "idle2": "idle2",
+      "walk": "walk",
+      "run": "run",
+      "sit": "idle2",
+      "sleep": "sleep",
+      "pet": ["pet", "hop"],
+      "special": ["hop", "spin"],
+      "drag": "hurt",
+      "fall": "hurt",
+      "climb": "walk",
+      "work": "work",
+      "pounce": "pounce"
+    },
+    "lines": {
+      "idle": ["멍.", "(꼬리를 살랑살랑)", "여기 있을게. 무슨 일 있으면 불러.", "주변은 조용해. 내가 보고 있을게.", "킁킁… 별일 없네.", "심심하면 산책 가자. 멍!"],
+      "walk": ["순찰 중이야. 멍.", "킁킁, 이쪽은 이상 없음.", "천천히 한 바퀴만 돌고 올게."],
+      "run": ["멍멍! 따라와!", "헥헥… 이 정도는 거뜬해!", "달리는 거 좋아!"],
+      "sit": ["잠깐 쉬어도 되지?", "여기서 지켜볼게."],
+      "sleep": ["쿠울…", "…(귀를 쫑긋)… 쿠울…", "…멍…"],
+      "morning": ["좋은 아침! 오늘도 옆에 있을게. 멍!", "일어났어? 산책 시간이야!"],
+      "afternoon": ["점심은 챙겨 먹었어?", "오후엔 좀 나른하지. 나도 그래."],
+      "evening": ["오늘도 고생했어. 멍.", "해가 지네. 슬슬 마무리하자."],
+      "night": ["늦었어. 이제 쉬자.", "밤엔 내가 지킬게. 먼저 자.", "눈 아프겠다. 조금만 하고 자."],
+      "longRun": ["계속 곁에 있었어. 멍.", "오래 켜 뒀네. 잠깐 스트레칭 어때?"],
+      "picked": ["왈!?", "어, 어디 가는 거야?", "멍! 내려 줘!"],
+      "thrown": ["깨갱!", "왈왈왈─!", "날아간다아!"],
+      "landed": ["…착지 성공. 멍.", "괜찮아, 튼튼하거든.", "후우, 깜짝이야."],
+      "petted": ["헤헤, 좋아. 멍!", "(꼬리를 마구 흔든다)", "더! 더 쓰다듬어 줘!"],
+      "woken": ["왈!? …아, 너구나.", "음냐… 벌써 아침이야?", "안 잤어. 경계 중이었어."],
+      "together": ["같이 있으니까 든든하다. 멍."]
+    },
+    "claude": {
+      "done": ["멍! 다 끝났대. 확인해 봐!", "끝났어! 칭찬해 줘. 멍."],
+      "long": ["{m}분 기다렸어. 끝났어! 멍!", "오래 걸렸지만 끝까지 지켜봤어."],
+      "sleepy": ["왈!? …아, 끝났대! 안 잤어.", "쿠울… 멍!? 끝났어!"],
+      "fail": ["왈왈! 뭔가 멈췄어!", "…낑. 오류가 났나 봐. 같이 보자."],
+      "permission": ["멍! 허락이 필요하대!", "주인, 이거 해도 되냐고 물어봐."],
+      "waiting": ["네 대답을 기다리고 있어. 멍.", "…꼬리 흔들며 기다리는 중."],
+      "noWindow": ["그 창을 못 찾겠어. 킁킁…"]
+    },
+    "recap": {
+      "some": ["정각이야! 남은 일 {n}개. 멍!", "잊지 않게 알려 줄게. 남은 거 {n}개."],
+      "now": ["남은 일 {n}개야."],
+      "none": ["할 일 다 끝났어! 대단해. 멍!", "남은 거 없어. 산책 가자!"],
+      "empty": ["적어 둔 할 일이 없어. 킁킁."],
+      "urgent": ["{t는} {left} 안에 해야 해! 멍!", "{t}, {left} 남았어. 힘내!"],
+      "over": ["{t는} 벌써 지났어. 괜찮아, 지금 하자."]
+    }
+  }
+}
