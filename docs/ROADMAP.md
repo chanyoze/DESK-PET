@@ -293,7 +293,10 @@ Relax / Sit / Sleep` 여섯 개뿐이라, 벽 타기는 `Move`를 재생할 수�
 - [x] 하데리어(#0507) 레시피 — 대기 숨쉬기 6프레임, 폴짝 · 빙글 · 뒷다리 서기, 충직한 강아지 대사
 - [x] `animations.work` — Claude 작업 중엔 앉기 대신 이 동작 (하데리어는 기 모으기)
 - [x] `animations.pounce` — 커서 놀이 "쫓아오기"로 커서에 닿으면 한 번 덤빈다 (하데리어는 공격)
-- [ ] 맥북 대응 — 하데리어는 지인이 맥에서 쓸 예정 (HANDOFF 2-2)
+- [x] 맥 빌드 — GitHub Actions 맥 러너, universal zip, ad-hoc 서명 (`.github/workflows/mac.yml`, `tools/build-mac.js`)
+- [x] 첫 실행 자동 설치 — 프리셋 `autoInstall` 의 레시피 캐릭터를 쓰는 사람 PC에서 받는다 (그림을 빌드에 안 넣음)
+- [x] 맥에서 윈도우 전용 기능 건너뛰기 · Dock 숨김 · 모든 Spaces · 메뉴바 아이콘 크기
+- [ ] 맥에서 실제 확인 (지인) · 맥용 Claude 훅(sh + curl)
 
 ### 여기서 배운 것
 

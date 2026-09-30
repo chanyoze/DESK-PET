@@ -43,11 +43,14 @@
 - `node tools/pmd-import.js tools/recipes/pokemon/herdier.json` → `%APPDATA%\deskpet\characters\pokemon-herdier`
   (PMDCollab 에서 받아 온다 — 인터넷 필요. 회사 PC에서도 같은 명령으로 만들 수 있다)
 - 동작 10개 화면 확인 완료. 매핑은 도감 아티팩트(9절)대로, 사용자 확인 받음
-- **다음: 맥북 대응** (아래 2-2). 지인에게 물어볼 것 — 칩(M1 이상/인텔), Claude Code 쓰는지
-  - 맥 빌드는 맥에서만 된다 → GitHub Actions 맥 러너로 **그림 없는 앱**을 빌드하고, 하데리어 폴더는 따로 전달
-    (저장소가 공개라 포켓몬 그림을 CI에 올리면 안 된다)
-  - 윈도우 전용: Claude 훅(ps1) · 그 터미널로(SetForegroundWindow) · `deskpet.ps1` · 토스트 이름(AppUserModelId) ·
-    7za 래퍼. 맥 전용으로 필요: Dock 아이콘 숨기기(`app.dock.hide`), 모든 Spaces 에 보이기
+- **맥 빌드 완료 → 지인에게 전달 대기**: 릴리스 `mac-v0.15.0` 의 `DeskPet-mac-0.15.0.zip` (universal, ad-hoc 서명)
+  - 그림 없음 (확인함). 처음 켤 때 `autoInstall` 로 PMDCollab 에서 하데리어를 받는다 (`src/pmd.js`, main.js `autoInstallCharacters`)
+  - 지인이 할 일: zip 풀기 → 응용 프로그램 폴더로 → 터미널에서 한 번 `xattr -cr /Applications/DeskPet.app` → 실행
+  - 다시 빌드: Actions 탭 "Build macOS app" 또는 `gh workflow run mac.yml` (`tools/build-mac.js`, 프리셋 `tools/presets/herdier.json`)
+  - 맥에서는 윈도우 전용 기능을 건너뛴다: Claude 훅(ps1) · 그 터미널로 · `deskpet.ps1` · AppUserModelId.
+    메뉴의 Claude Code 섹션은 "알림"(시스템 알림 · 최근 알림)만 나온다. Dock 숨김 · 모든 Spaces 에 보이기 · 메뉴바 아이콘 18pt
+  - **맥에서 실제로 켜 본 적 없음** — 지인 피드백 필요 (바닥선이 Dock 위에 맞는지, 클릭 통과, 메뉴바 아이콘, 첫 실행 설치)
+  - 지인이 Claude Code 를 쓰면: 맥용 훅(sh + curl) · 그 터미널로(osascript) 가 다음 할 일
 
 ### 2-2. 사용자에게 여쭤 둔 것 (답 대기)
 - **맥북 대응** — exe 는 윈도우 전용. 맥에서 쓰려면 ① 맥용 훅(sh + curl) ② "그 터미널로" (osascript)
