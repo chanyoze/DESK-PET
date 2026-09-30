@@ -306,6 +306,24 @@ ik: { armFront: { x: 12, y: -44, bend: -1 } }   // "손을 여기에 놓아라"
 렌더러가 매 이동마다 히트 테스트를 해서 캐릭터 위일 때만 IPC로
 `setIgnoreMouseEvents(false)`를 요청한다. 캐릭터를 벗어나면 즉시 되돌린다.
 
+다만 `forward` 는 주 모니터가 아닌 곳이나 창을 옮긴 뒤에 `mousemove` 가 끊긴다. 그래서
+메인이 `screen.getCursorScreenPoint()` 로 커서 위치를 초당 20번 읽어 렌더러에 따로 넘기고,
+렌더러는 매 프레임 판정을 다시 한다. 창이 새로고침될 때는 클릭 통과 상태로 되돌린다.
+
+## 개인 빌드 (뽑아 둔 캐릭터를 exe에 넣기)
+
+게임이 없는 다른 PC(예: 회사 PC)에서 쓰려면, 내 PC에서 뽑아 둔 캐릭터를 exe 안에 넣어 빌드한다.
+
+```bash
+npm run dist:private                     # %APPDATA%/deskpet/characters 의 termina-* 전부
+npm run dist:private -- termina-marina   # 골라서
+```
+
+- 결과물은 `dist/private/DeskPet-private-x.y.z.exe` — 파일 하나, 설치 없음
+- 지금 설정(주인공 · 동료 · 분위기 · 크기 · 무장)이 `preset.json` 으로 들어가서, 새 PC에서 처음 켜도 같은 상태로 시작한다
+- **게임 에셋이 들어간 파일이다. 나만 쓰는 PC에 복사하는 용도로만 쓰고, 릴리스나 공유는 하지 않는다.**
+  `characters/*` · `preset.json` · `dist/` 는 전부 gitignore 되어 있다
+
 ## 외부에서 말 시키기
 
 앱은 `127.0.0.1:45678` 에만 바인딩된 작은 HTTP 서버를 연다. 빌드 스크립트든

@@ -15,3 +15,6 @@ vendor/
 
 # 페이지 빌드 시 복사되는 생성물
 site/character.js
+
+# 개인 빌드 (게임 에셋 포함) — 절대 커밋·배포하지 않는다
+preset.json

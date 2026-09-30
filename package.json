@@ -13,7 +13,8 @@
     "say": "node tools/say.js",
     "check-pma": "node tools/check-pma.js",
     "dist": "electron-builder --win portable",
-    "pack": "electron-builder --dir"
+    "pack": "electron-builder --dir",
+    "dist:private": "node tools/build-private.js"
   },
   "author": "이찬호",
   "license": "MIT",

@@ -19,6 +19,14 @@ const DEFAULTS = {
   speakOnClaude: true,
 };
 
+/**
+ * 빌드에 preset.json 이 들어 있으면 기본값으로 쓴다 (개인 빌드용 — tools/build-private.js).
+ * 공개 빌드에는 없어서 DEFAULTS 그대로다. 사용자가 바꾼 설정은 이 위에 덮인다.
+ */
+try {
+  Object.assign(DEFAULTS, JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'preset.json'), 'utf8')));
+} catch { /* 없으면 그만 */ }
+
 let cache = null;
 
 function load() {
