@@ -1,6 +1,6 @@
 # HANDOFF — 다음 세션에서 이어서 하기
 
-**작성 2026-09-30 · 갱신 2026-09-30(회사 PC 세션) · 버전 0.14.0**
+**작성 2026-09-30 · 갱신 2026-09-30(집 PC 세션) · 버전 0.15.0**
 
 집 PC ↔ 회사 PC 세션 사이 인수인계 문서다. 새 세션은 이 파일 → `README.md` → `docs/ROADMAP.md` 순으로 읽으면 된다.
 
@@ -37,6 +37,17 @@
    - exe 교체할 때 보안 프로그램이 파일을 잠깐 잡고 있을 수 있다 → 앱을 끈 뒤 복사를 재시도
 4. exe 메뉴 → Claude Code → **알림 연결하기** (집 PC 의 예전 `say.js` 훅이 새 방식으로 바뀐다. 누르는 건 사용자 몫)
 5. todo.md · notes.json 은 PC 마다 따로다 (회사 할 일이 저장소에 안 올라가게 일부러) — 집은 빈 목록에서 시작
+
+### 2-1b. 하데리어 (지인용 포켓몬) — v0.15 완료 (2026-09-30 집 PC)
+
+- `node tools/pmd-import.js tools/recipes/pokemon/herdier.json` → `%APPDATA%\deskpet\characters\pokemon-herdier`
+  (PMDCollab 에서 받아 온다 — 인터넷 필요. 회사 PC에서도 같은 명령으로 만들 수 있다)
+- 동작 10개 화면 확인 완료. 매핑은 도감 아티팩트(9절)대로, 사용자 확인 받음
+- **다음: 맥북 대응** (아래 2-2). 지인에게 물어볼 것 — 칩(M1 이상/인텔), Claude Code 쓰는지
+  - 맥 빌드는 맥에서만 된다 → GitHub Actions 맥 러너로 **그림 없는 앱**을 빌드하고, 하데리어 폴더는 따로 전달
+    (저장소가 공개라 포켓몬 그림을 CI에 올리면 안 된다)
+  - 윈도우 전용: Claude 훅(ps1) · 그 터미널로(SetForegroundWindow) · `deskpet.ps1` · 토스트 이름(AppUserModelId) ·
+    7za 래퍼. 맥 전용으로 필요: Dock 아이콘 숨기기(`app.dock.hide`), 모든 Spaces 에 보이기
 
 ### 2-2. 사용자에게 여쭤 둔 것 (답 대기)
 - **맥북 대응** — exe 는 윈도우 전용. 맥에서 쓰려면 ① 맥용 훅(sh + curl) ② "그 터미널로" (osascript)
@@ -134,5 +145,6 @@ npm run dist:private                        # 개인 빌드 (에셋 포함, 배�
 - 다운로드 페이지: https://chanyoze.github.io/DESK-PET/ (v0.10.0), 릴리스: GitHub Releases v0.10.0
 - 스프라이트 도감(개인 참고용 아티팩트): https://claude.ai/artifact/NvSctn7aVcFmP3nd5xQugR — 공유 설정이
   "링크 있는 누구나"였던 적이 있으니 비공개인지 확인
+- 하데리어 스프라이트 도감(아티팩트, 비공개): https://claude.ai/artifact/8RhALVocEQtmiZJPYbgF6n
 - 커뮤니티용 움짤: 집 PC 바탕화면 `DeskPet-GIF/` (게임 그림 포함, 저장소에 없음)
 - 명일방주 캐릭터는 집 PC에서 `"hidden": true` 로 숨겨 둠 (로컬 파일)

@@ -13,6 +13,8 @@
  *           once: true 면 한 번만 재생하고 마지막 칸에서 멈춘다 (변신 같은 연출).
  *           mirror: true 면 frames(정면) 클립도 왼쪽을 볼 때 좌우를 뒤집는다 (껴안기처럼
  *           두 사람이 한 칸에 있는 그림을 둘의 위치에 맞출 때).
+ *           frameMs: [ms, ...] 를 주면 fps 대신 칸마다 머무는 시간을 따로 쓴다
+ *           (불가사의 던전 스프라이트처럼 프레임 길이가 제각각인 동작).
  *
  * 발 위치는 칸마다 알파를 훑어서 찾는다. 게임마다 칸 안의 여백이 제각각이라
  * 사람이 맞추면 동작이 바뀔 때마다 캐릭터가 위아래로 튄다.
@@ -137,6 +139,10 @@
           bob: def.bob || 0,
           once: !!def.once,
           mirror: !!def.mirror,
+          // 칸마다 끝나는 시각(ms) 누적 — frameMs 가 있을 때만
+          ends: Array.isArray(def.frameMs) && def.frameMs.length
+            ? def.frameMs.reduce((acc, ms) => { acc.push((acc.length ? acc[acc.length - 1] : 0) + Math.max(1, ms)); return acc; }, [])
+            : null,
           lists,
           baseline: bottom + 1,
           figureH: bottom + 1 - top,
@@ -217,8 +223,18 @@
       const clip = this.clips[this._current || 'idle'];
       const list = clip.lists.front || (facing < 0 ? clip.lists.left : clip.lists.right) ||
         clip.lists.left || clip.lists.right;
-      const step = Math.floor(this._t * clip.fps);
-      const [col, row] = list[clip.once ? Math.min(step, list.length - 1) : step % list.length];
+      let idx;
+      if (clip.ends) {
+        const total = clip.ends[clip.ends.length - 1];
+        const t = clip.once ? Math.min(this._t * 1000, total - 1) : (this._t * 1000) % total;
+        idx = 0;
+        while (idx < clip.ends.length - 1 && t >= clip.ends[idx]) idx++;
+        idx = Math.min(idx, list.length - 1);
+      } else {
+        const step = Math.floor(this._t * clip.fps);
+        idx = clip.once ? Math.min(step, list.length - 1) : step % list.length;
+      }
+      const [col, row] = list[idx];
       const sh = clip.sheet;
 
       const ctx = this.ctx;

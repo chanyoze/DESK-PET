@@ -312,6 +312,22 @@ ik: { armFront: { x: 12, y: -44, bend: -1 } }   // "손을 여기에 놓아라"
 메인이 `screen.getCursorScreenPoint()` 로 커서 위치를 초당 20번 읽어 렌더러에 따로 넘기고,
 렌더러는 매 프레임 판정을 다시 한다. 창이 새로고침될 때는 클릭 통과 상태로 되돌린다.
 
+## 포켓몬 (불가사의 던전 스타일 스프라이트)
+
+[PMDCollab SpriteCollab](https://github.com/PMDCollab/SpriteCollab) 의 팬 스프라이트로 포켓몬 캐릭터를 만든다.
+동작마다 시트와 `AnimData.xml`(칸 크기 · 프레임 시간)이 있어서, 레시피엔 "펫 상태 → 동작 · 방향 줄"만 적으면 된다.
+
+```bash
+node tools/pmd-import.js tools/recipes/pokemon/herdier.json      # 하데리어 (#0507)
+```
+
+- 방향 줄: `0` 아래 · `1` 오른쪽 아래 · `2` 오른쪽 · `3` 오른쪽 위 · `4` 위 · `5` 왼쪽 위 · `6` 왼쪽 · `7` 왼쪽 아래
+- 레시피 `clips` 의 `{ "anim": "Walk", "left": 6, "right": 2 }` 가 칸 목록 + `frameMs` 로 펼쳐진다. `speed` 로 빠르게
+- 키는 대기 칸의 실제 그림 높이 × `scale`(기본 3). 도트는 `smoothing: false` 로 픽셀 그대로
+- 다른 포켓몬은 `dex`(도감 번호)만 바꾼 레시피를 만들면 된다. 동작 이름은 [뷰어](https://sprites.pmdcollab.org/)에서 확인
+- **라이선스**: 스프라이트는 CC BY-NC 4.0 (비상업 · 크레딧). 캐릭터 폴더에 `CREDITS.txt` 가 같이 생긴다.
+  포켓몬은 닌텐도 · 게임프리크 · 포켓몬 컴퍼니 IP — 개인용으로만 쓰고 배포하지 않는다
+
 ## 개인 빌드 (뽑아 둔 캐릭터를 exe에 넣기)
 
 게임이 없는 다른 PC(예: 회사 PC)에서 쓰려면, 내 PC에서 뽑아 둔 캐릭터를 exe 안에 넣어 빌드한다.
