@@ -4,6 +4,11 @@ const fs = require('fs');
 const { pathToFileURL } = require('url');
 const settings = require('./settings');
 const notify = require('./notify-server');
+const pmd = require('./pmd');
+
+// 윈도우 전용(PowerShell 훅 · 창 앞으로 · deskpet.ps1)은 맥에서 건너뛴다
+const IS_WIN = process.platform === 'win32';
+const IS_MAC = process.platform === 'darwin';
 const claudeHooks = require('./claude-hooks');
 const psScripts = require('./ps-scripts');
 const notesStore = require('./notes-store');
@@ -213,6 +218,8 @@ function createWindow() {
 
   // 'screen-saver' 레벨이라야 대부분의 always-on-top 창보다 위로 온다
   win.setAlwaysOnTop(true, 'screen-saver');
+  // 맥: 데스크톱(Spaces)을 넘겨도 · 전체화면 앱 위에서도 보이게
+  if (IS_MAC) win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   // 기본은 클릭 통과. forward:true 덕분에 renderer는 mousemove를 계속 받는다.
   win.setIgnoreMouseEvents(true, { forward: true });
   // 새로고침(모니터 이동·크기 변경)할 때마다 클릭 통과로 되돌린다. 렌더러는 새로 부팅하며
@@ -341,8 +348,7 @@ function buildTrayMenu() {
 }
 
 function createTray() {
-  const icon = nativeImage.createFromPath(path.join(__dirname, '..', 'assets', 'tray.png'));
-  tray = new Tray(icon);
+  tray = new Tray(trayImage());
   tray.setToolTip('DeskPet');
   // setContextMenu 대신 열 때마다 최신 상태로 띄운다
   const popup = () => tray.popUpContextMenu(buildTrayMenu());
@@ -630,6 +636,7 @@ function claudeSessionList() {
  * SetForegroundWindow 를 부르는 흔한 우회를 쓴다 (userData 의 deskpet-focus.ps1).
  */
 function focusClaudeSession(sid) {
+  if (!IS_WIN) return { ok: false };
   const s = claudeSessions.get(sid);
   if (!s || !s.win) return { ok: false, reason: 'nowindow' };
   const script = path.join(app.getPath('userData'), 'deskpet-focus.ps1');
@@ -650,6 +657,8 @@ function focusClaudeSession(sid) {
 
 function claudeStatus() {
   const cfg = settings.load();
+  // 훅 스크립트가 PowerShell 이라 윈도우에서만 연결할 수 있다
+  if (!IS_WIN) return { available: false, connected: false, speak: cfg.speakOnClaude !== false, toast: cfg.toastOn !== false };
   return {
     ...claudeHooks.status({ scriptPath: claudeHookScript() }),
     speak: cfg.speakOnClaude !== false,
@@ -678,10 +687,16 @@ function toast(title, body, sid) {
  * 작업 표시줄 버튼이 없는 창이라 깜빡일 수가 없어서 트레이로 대신한다.
  */
 let trayIcons = null;
+
+/** 트레이 아이콘 — 맥 메뉴바는 18pt 가 적당하다 (32px 그대로면 크게 튄다) */
+function trayImage() {
+  const img = nativeImage.createFromPath(path.join(__dirname, '..', 'assets', 'tray.png'));
+  return IS_MAC ? img.resize({ width: 18, height: 18 }) : img;
+}
 function setTrayAlert(n) {
   if (!tray) return;
   if (!trayIcons) {
-    const base = nativeImage.createFromPath(path.join(__dirname, '..', 'assets', 'tray.png'));
+    const base = trayImage();
     const { width: w, height: h } = base.getSize();
     const bmp = Buffer.from(base.toBitmap());           // BGRA
     const r = Math.max(3, Math.round(w * 0.22)), cx = w - r - 1, cy = r + 1;
@@ -712,17 +727,62 @@ function autoStartStatus() {
   return { available: true, on: app.getLoginItemSettings({ path: loginExe() }).openAtLogin };
 }
 
+/**
+ * 설정(빌드의 preset.json)의 autoInstall 에 적힌 레시피 캐릭터가 아직 없으면 받아 온다.
+ *   "autoInstall": ["pokemon/herdier"]   → tools/recipes/pokemon/herdier.json
+ * 그림을 빌드에 넣지 않고 쓰는 사람 PC 에서 처음 켤 때 받기 위해서다 (지인용 맥 빌드).
+ * 받는 동안은 있는 캐릭터가 알려 주고, 끝나면 새로고침해서 바로 보이게 한다.
+ * 인터넷이 안 되면 다음에 켤 때 다시 시도한다.
+ */
+async function autoInstallCharacters(cfg) {
+  // 받는 게 금방 끝나면 새로고침한 뒤에 "데려오는 중"이 늦게 뜬다 → 끝났으면 그 말은 버린다
+  let busy = null;
+  const say = (msg) => {
+    if (!win) return;
+    const send = () => { if (!msg.whileBusy || busy === msg.whileBusy) win?.webContents.send('pet:say', msg); };
+    if (win.webContents.isLoading()) win.webContents.once('did-finish-load', () => setTimeout(send, 1500));
+    else send();
+  };
+  let installed = 0;
+  for (const rel of cfg.autoInstall || []) {
+    let recipe;
+    try {
+      recipe = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'tools', 'recipes', rel + '.json'), 'utf8'));
+    } catch (e) {
+      console.error('[pmd] 레시피 없음:', rel, e.message);
+      continue;
+    }
+    if (charPath(recipe.id)) continue;
+    const name = (recipe.manifest && recipe.manifest.name) || recipe.id;
+    busy = recipe.id;
+    say({ text: name + ' 데려오는 중… 잠깐만!', mood: 'happy', ms: 6000, whileBusy: recipe.id });
+    try {
+      await pmd.importRecipe(recipe, path.join(userCharDir(), recipe.id), { log: (m) => console.log('[pmd] ' + m) });
+      busy = null;
+      installed++;
+      console.log('[pmd] 설치됨:', recipe.id);
+    } catch (e) {
+      console.error('[pmd] 설치 실패:', recipe.id, e.message);
+      busy = null;
+      say({ text: name + '를 못 데려왔어. 인터넷 연결을 확인하고 다시 켜 줘', mood: 'alert', ms: 8000 });
+    }
+  }
+  if (installed) win?.reload();      // 새 캐릭터로 다시 부팅
+}
+
 // 두 번 실행 방지
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.whenReady().then(() => {
-    app.setAppUserModelId('com.chanyoze.deskpet');     // 윈도우 알림에 DeskPet 으로 뜨게
+    if (IS_WIN) app.setAppUserModelId('com.chanyoze.deskpet');     // 윈도우 알림에 DeskPet 으로 뜨게
+    if (IS_MAC && app.dock) app.dock.hide();                       // 맥: Dock 에 아이콘 없이 메뉴바에만
     const cfg = settings.load();
     if (!currentCharacter) currentCharacter = cfg.character || null;
 
     createWindow();
     createTray();
+    autoInstallCharacters(cfg);
 
     // 외부에서 말을 시킬 수 있는 로컬 서버 (Claude Code 훅, 빌드 스크립트 등)
     notify.start(cfg.notifyPort, (msg) => {
@@ -733,7 +793,7 @@ if (!app.requestSingleInstanceLock()) {
 
     // 이미 연결돼 있으면 이 버전에 맞춰 다시 건다 — 스크립트 내용 · 포트 · 거는 이벤트가 바뀌었을 수 있다.
     // install 은 우리 훅만 걷어내고 다시 넣으므로 몇 번을 불러도 같다.
-    if (fs.existsSync(claudeHookScript())) {
+    if (IS_WIN && fs.existsSync(claudeHookScript())) {
       try {
         let st = claudeHooks.status({ scriptPath: claudeHookScript() });
         if (st.connected && !st.legacy) {
@@ -748,10 +808,12 @@ if (!app.requestSingleInstanceLock()) {
     }
 
     // 명령줄 도구 (빌드 · 서버 기동 알림) — 설치 위치가 늘 같도록 userData 에 둔다
-    try {
-      fs.writeFileSync(path.join(app.getPath('userData'), 'deskpet.ps1'), psScripts.cliScript(cfg.notifyPort), 'utf8');
-    } catch (e) {
-      console.error('[cli] deskpet.ps1 쓰기 실패:', e.message);
+    if (IS_WIN) {
+      try {
+        fs.writeFileSync(path.join(app.getPath('userData'), 'deskpet.ps1'), psScripts.cliScript(cfg.notifyPort), 'utf8');
+      } catch (e) {
+        console.error('[cli] deskpet.ps1 쓰기 실패:', e.message);
+      }
     }
 
     startReminderLoop();

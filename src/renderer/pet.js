@@ -1196,15 +1196,17 @@
     // Claude Code — 훅이 걸려 있으면 끝났을 때 · 허락이 필요할 때 알려 준다
     const cs = claudeState || {};
     const cItems = [];
-    if (cs.connected) {
+    if (cs.available === false) {
+      // 윈도우가 아니면 Claude Code 연결은 없고 알림 설정만
+    } else if (cs.connected) {
       cItems.push({ label: '알림 말하기', value: 'claude:speak', checked: cs.speak });
       cItems.push({ label: '연결 끊기', value: 'claude:off', danger: true });
     } else {
       cItems.push({ label: cs.legacy ? '알림 연결하기 (예전 훅 바꾸기)' : '알림 연결하기', value: 'claude:on' });
     }
-    cItems.push({ label: '윈도우 알림 (허락 · 오류 · 기한 · 빌드 실패)', value: 'toast:' + (cs.toast ? 'off' : 'on'), checked: !!cs.toast });
+    cItems.push({ label: (cs.available === false ? '시스템 알림' : '윈도우 알림') + ' (허락 · 오류 · 기한 · 빌드 실패)', value: 'toast:' + (cs.toast ? 'off' : 'on'), checked: !!cs.toast });
     if (inbox.items.length) cItems.push({ label: '최근 알림 보기' + (inbox.unread() ? ' (' + inbox.unread() + ')' : ''), value: 'act:inbox' });
-    sections.push({ title: 'Claude Code' + (cs.connected ? ' · 연결됨' : ''), fold: cs.connected ? 'claude' : '', items: cItems });
+    sections.push({ title: cs.available === false ? '알림' : 'Claude Code' + (cs.connected ? ' · 연결됨' : ''), fold: cs.connected ? 'claude' : '', items: cItems });
     // 세션 현황 — 누르면 그 터미널 창으로 (↗ 는 창을 찾아 둔 세션)
     if (cs.connected && claudeSessions.length) {
       sections.push({ title: 'Claude 세션 (눌러서 그 창으로)', items: claude.menuItems(claudeSessions) });

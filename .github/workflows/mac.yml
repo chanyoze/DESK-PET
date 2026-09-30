@@ -1,0 +1,50 @@
+name: Build macOS app
+
+# 수동 실행 — Actions 탭에서 "Run workflow" 또는 `gh workflow run mac.yml`
+# 그림 없는 앱을 빌드하고, 프리셋의 autoInstall 로 받는 사람 맥에서 캐릭터를 받게 한다.
+on:
+  workflow_dispatch:
+    inputs:
+      preset:
+        description: '기본 설정 프리셋'
+        default: 'tools/presets/herdier.json'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: 빌드 (universal zip, ad-hoc 서명)
+        run: node tools/build-mac.js "${{ inputs.preset }}"
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DeskPet-mac
+          path: dist/mac/*.zip
+
+      - name: 릴리스에 올리기 (프리릴리스 mac-v버전)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VER=$(node -p "require('./package.json').version")
+          TAG="mac-v$VER"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/mac/*.zip --clobber
+          else
+            gh release create "$TAG" dist/mac/*.zip --prerelease --title "DeskPet for macOS $VER" \
+              --notes "맥용 (애플 실리콘 · 인텔). 받은 뒤 응용 프로그램 폴더로 옮기고 터미널에서 한 번: xattr -cr /Applications/DeskPet.app — 캐릭터는 처음 켤 때 인터넷에서 받아 온다 (그림은 이 파일에 없음)."
+          fi
