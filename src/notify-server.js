@@ -59,18 +59,29 @@ function start(port, onMessage, onClaude) {
       return;
     }
 
-    const deliver = (text, mood, ms) => {
+    /**
+     * source 가 있으면 알림 카드로 뜬다 (대화 말풍선과 구분 · 놓친 알림에 남음).
+     * level: done | fail | due | build | info — 카드 색. fail 이면 윈도우 알림도.
+     */
+    const deliver = (text, mood, ms, extra) => {
       if (!text) {
         res.statusCode = 400;
         res.end(JSON.stringify({ ok: false, error: 'text 없음' }));
         return;
       }
-      onMessage({ text: String(text).slice(0, 300), mood: mood || 'normal', ms: Number(ms) || 0 });
+      const msg = { text: String(text).slice(0, 300), mood: mood || 'normal', ms: Number(ms) || 0 };
+      const e = extra || {};
+      if (e.source) msg.source = String(e.source).slice(0, 40);
+      if (e.level) msg.level = String(e.level).slice(0, 20);
+      if (e.project) msg.project = String(e.project).slice(0, 60);
+      if (e.line) msg.line = String(e.line).slice(0, 200);
+      onMessage(msg);
       res.end(JSON.stringify({ ok: true }));
     };
 
     if (req.method === 'GET') {
-      deliver(url.searchParams.get('text'), url.searchParams.get('mood'), url.searchParams.get('ms'));
+      const q = (k) => url.searchParams.get(k);
+      deliver(q('text'), q('mood'), q('ms'), { source: q('source'), level: q('level'), project: q('project'), line: q('line') });
       return;
     }
 
@@ -81,7 +92,7 @@ function start(port, onMessage, onClaude) {
       } catch {
         payload = { text: body };     // JSON 아니면 본문을 그대로 대사로
       }
-      deliver(payload.text, payload.mood, payload.ms);
+      deliver(payload.text, payload.mood, payload.ms, payload);
     });
   });
 

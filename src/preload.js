@@ -40,6 +40,37 @@ contextBridge.exposeInMainWorld('petAPI', {
   claudeSessions: () => ipcRenderer.invoke('claude:sessions'),
   /** 그 세션의 터미널 창을 앞으로 → { ok, reason? } */
   claudeFocus: (sid) => ipcRenderer.invoke('claude:focus', sid),
+  // ── 할 일 · recap ──
+  /** { items: [{ i, text, done }], doneToday, file, recap: { every, from, to, weekdays } } */
+  todoGet: () => ipcRenderer.invoke('todo:get'),
+  /** 입력 창을 띄워 할 일을 추가한다 (창이 닫히면 새 목록으로 풀린다) */
+  todoAdd: (defaults) => ipcRenderer.invoke('todo:add', defaults),
+  todoToggle: (i, text) => ipcRenderer.invoke('todo:toggle', i, text),
+  todoClearDone: () => ipcRenderer.invoke('todo:clearDone'),
+  /** todo.md 를 편집기로 연다 */
+  todoOpen: () => ipcRenderer.invoke('todo:open'),
+  recapNow: () => ipcRenderer.invoke('recap:now'),
+  /** 0(끔) · 30 · 60 · 120 분 */
+  recapSetEvery: (m) => ipcRenderer.invoke('recap:setEvery', m),
+  /** 파일이 바뀌면 새 할 일 목록 */
+  onTodo: (cb) => ipcRenderer.on('pet:todo', (_e, s) => cb(s)),
+  /** recap 시각 { reason, open: [글], total, doneToday } */
+  onRecap: (cb) => ipcRenderer.on('pet:recap', (_e, r) => cb(r)),
+  // ── 스티커 메모 · 카드 ── (모두 { notes, todoCard, hidden } 을 돌려준다)
+  notesGet: () => ipcRenderer.invoke('notes:get'),
+  /** 입력 창을 띄워 새 메모 — pos 는 처음 붙일 자리 */
+  notesAdd: (pos) => ipcRenderer.invoke('notes:add', pos),
+  notesEdit: (id) => ipcRenderer.invoke('notes:edit', id),
+  /** 위치 · 접힘만 */
+  notesUpdate: (id, patch) => ipcRenderer.invoke('notes:update', id, patch),
+  notesRemove: (id) => ipcRenderer.invoke('notes:remove', id),
+  notesSetTodoCard: (patch) => ipcRenderer.invoke('notes:setTodoCard', patch),
+  notesSetHidden: (v) => ipcRenderer.invoke('notes:setHidden', v),
+  // ── 알림 ──
+  /** 안 읽은 알림 수 → 트레이 아이콘 빨간 점 */
+  inboxCount: (n) => ipcRenderer.send('inbox:count', n),
+  /** 윈도우 알림(토스트) 켜기 · 끄기 → 켜졌는지 */
+  toastSet: (v) => ipcRenderer.invoke('toast:set', v),
   /** 커서 놀이 'none' | 'chase' | 'flee' */
   setCursorMode: (m) => ipcRenderer.invoke('settings:setCursorMode', m),
   /** { available, on } — 개발 실행에선 available=false */

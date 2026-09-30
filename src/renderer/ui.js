@@ -35,7 +35,11 @@
         return;
       }
       this.current = msg;
-      this.el.textContent = msg.text;
+      if (msg.card) this.renderCard(msg.card);
+      else {
+        this.el.className = 'bubble';
+        this.el.textContent = msg.text;
+      }
       this.el.dataset.mood = msg.mood || 'normal';
       this.el.dataset.link = msg.sid ? '1' : '';     // Claude 세션 말풍선 — 누르면 그 터미널로
       this.el.hidden = false;
@@ -44,6 +48,29 @@
       const ms = msg.ms || Math.min(12000, 2200 + msg.text.length * 90);
       this.until = performance.now() + ms;
       this.timer = setTimeout(() => this.next(), ms);
+    }
+
+    /**
+     * 알림 카드 — 대화 말풍선과 구분되는 모양.
+     * card = { source, project, level: done|permission|waiting|fail|due|build|info, title, line, at }
+     * 윗줄 "Claude · 프로젝트 · 15:42", 가운데 사실(작업 끝남 · 허락 필요 …), 아래 작은 글씨로 캐릭터 한마디.
+     */
+    renderCard(card) {
+      this.el.className = 'bubble alert-card';
+      this.el.dataset.level = card.level || 'info';
+      this.el.textContent = '';
+      const d = new Date(card.at || Date.now());
+      const hm = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+      const add = (cls, text) => {
+        if (!text) return;
+        const e = document.createElement('div');
+        e.className = cls;
+        e.textContent = text;
+        this.el.appendChild(e);
+      };
+      add('ac-head', [card.source, card.project, hm].filter(Boolean).join(' · '));
+      add('ac-title', card.title);
+      add('ac-line', card.line);
     }
 
     dismiss() {
