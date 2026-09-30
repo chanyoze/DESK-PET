@@ -41,7 +41,7 @@
   };
 
   const STILL = ['idle', 'idle2', 'sit', 'sleep', 'pet', 'special', 'hug', 'hugged', 'down', 'recover', 'bloodcast', 'vanish'];
-  const MOVING = ['walk', 'run', 'approach', 'nightmare'];
+  const MOVING = ['walk', 'run', 'approach', 'nightmare', 'rush'];
   const RESTING = ['idle', 'idle2', 'walk', 'run', 'sit', 'sleep', 'pet', 'special', 'hug',
     'down', 'recover', 'nightmare', 'bloodcast'];
   /** 원작처럼 분위기에서만 나오는 상태 — 끝나면 정해진 다음 상태로 간다 */
@@ -74,6 +74,8 @@
   let roster = [];        // 설치된 캐릭터 목록
   let reminders = [];     // 예약된 리마인더
   let displays = [];      // 모니터 목록 (메뉴 열 때 갱신)
+  let claudeState = null; // Claude Code 훅 연결 상태 (메뉴 열 때 갱신)
+  let autoStart = null;   // 윈도우 시작 시 실행 { available, on }
   let spineLoaded = false;
 
   /** @type {Pet[]} 0 = 주인공, 1 = 동료 */
@@ -186,7 +188,7 @@
 
     animFor(state) {
       const map = (this.character && this.character.animations) || {};
-      if (state === 'approach') state = this.canRun() ? 'run' : 'walk';
+      if (state === 'approach' || state === 'rush') state = this.canRun() ? 'run' : 'walk';
       if (state === 'hugged') state = 'idle';
       if (state === 'vanish') state = 'idle';
       let v = (this.mode && map[state + '@' + this.mode]) || map[state] || DEFAULT_ANIM[state] || state;
@@ -236,6 +238,13 @@
       if (S.state === 'sleep') {
         this.sleepCooldown = 6;                  // 깨면 당분간 다시 안 잔다
         return this.setState('idle', rand(2, 4));
+      }
+      // Claude 가 일하는 동안 주인공은 자리를 덜 뜨고 앉아서 기다린다 (잠들지는 않는다)
+      if (this.role === 'main' && claude.working()) {
+        if (r < 0.45) return this.setState('sit', rand(5, 10));
+        if (r < 0.75) return this.setState(Math.random() < 0.5 ? 'idle' : 'idle2', rand(2, 4));
+        S.dir = Math.random() < 0.5 ? -1 : 1;
+        return this.setState('walk', rand(2, 4));
       }
       if (S.state === 'sit' && this.sleepCooldown <= 0 && r < 0.15) {
         return this.setState('sleep', rand(6, 12));
@@ -311,6 +320,17 @@
       else if (S.state === 'run') S.vx = S.dir * this.RUN_SPEED;
       else if (S.state === 'approach') S.vx = S.dir * (this.canRun() ? this.RUN_SPEED : this.WALK_SPEED * 1.3);
       else if (S.state === 'nightmare') S.vx = S.dir * this.WALK_SPEED * 0.3;   // 피 흘리며 천천히 기어간다
+      else if (S.state === 'rush') {
+        // Claude 가 허락을 구할 때 커서 쪽으로 달려온다. 닿거나 시간이 다 되면 멈춰서 올려다본다
+        const dx = this.goalX - S.x;
+        S.dir = dx > 0 ? 1 : -1;
+        S.vx = S.dir * (this.canRun() ? this.RUN_SPEED : this.WALK_SPEED * 1.6);
+        S.until -= dt;
+        if (Math.abs(dx) < this.halfWidth() * 0.6 || S.until <= 0) {
+          S.facing = S.dir;
+          this.setState('pet', 2.2);
+        }
+      }
 
       S.x += S.vx * dt;
       S.y += S.vy * dt;
@@ -696,6 +716,79 @@
   };
 
   // ════════════════════════════════════════════════════════════
+  //  Claude Code 연동
+  // ════════════════════════════════════════════════════════════
+  /**
+   * 메인이 훅 이벤트를 해석해서 { kind, project, sec, busy } 로 보낸다 (main.js onClaudeEvent).
+   * 말은 주인공이 한다. 앞에 [프로젝트 폴더 이름] 을 붙여서 세션이 여럿이어도 구분되게 한다.
+   *
+   * 대사는 매니페스트의 claude 로 캐릭터마다 덮어쓸 수 있다:
+   *   "claude": { "done": [...], "long": [...], "fail": [...], "permission": [...], "waiting": [...] }
+   * long 은 5분 넘게 걸린 작업 — {m} 이 걸린 분으로 바뀐다.
+   */
+  const CLAUDE_LINES = {
+    done: ['끝났어. 확인해 봐', '다 됐어!', '작업 끝났어'],
+    long: ['{m}분 걸렸는데, 끝났어', '오래 걸렸다… 끝났어 ({m}분)'],
+    fail: ['멈췄어… 오류가 났나 봐', '중간에 끊겼어. 한번 봐 줘'],
+    permission: ['허락이 필요하대', '이거 해도 되냐고 물어봐'],
+    waiting: ['네 대답 기다리고 있어', '할 거 다 하고 기다리는 중이야'],
+  };
+
+  const claude = {
+    busy: 0,              // 일하는 중인 세션 수 (메인이 세어서 보내 준다)
+    busySince: 0,
+
+    /** 일하는 중인지 — 끝 신호를 놓쳐도 20분 지나면 풀린다 */
+    working() {
+      return this.busy > 0 && performance.now() - this.busySince < 20 * 60e3;
+    },
+
+    line(p, kind, vars) {
+      const own = p.character && p.character.claude && p.character.claude[kind];
+      const pool = own && own.length ? own : CLAUDE_LINES[kind];
+      let t = pool[Math.floor(Math.random() * pool.length)];
+      for (const [k, v] of Object.entries(vars || {})) t = t.split('{' + k + '}').join(v);
+      return t;
+    },
+
+    on(ev) {
+      if (ev.kind === 'start' && !this.busy) this.busySince = performance.now();
+      this.busy = ev.busy || 0;
+      const p = pets[0];
+      if (!p || !p.view || ev.quiet || ev.kind === 'start' || ev.kind === 'quick') return;
+      console.log('[claude] 반응:', ev.kind, ev.project || '', ev.sec != null ? ev.sec + 's' : '');
+
+      const tag = ev.project ? '[' + ev.project + '] ' : '';
+      if (ev.kind === 'done') {
+        const long = ev.sec >= 300;
+        const text = this.line(p, long ? 'long' : 'done', { m: Math.round(ev.sec / 60) });
+        p.say({ text: tag + text, mood: 'happy', ms: 7000 });
+      } else if (ev.kind === 'fail') {
+        p.say({ text: tag + this.line(p, 'fail'), mood: 'alert', ms: 8000, quiet: true });
+        if (hug.busy(p)) hug.cancel();
+        // 쓰러지는 동작이 있으면 쓰러졌다 일어난다, 없으면 평범하게 반응
+        if (p.has('down') && p.S.y >= stage.ground - 0.5) p.setState('down', 3);
+        else p.setState('pet', 2.2);
+      } else if (ev.kind === 'permission') {
+        p.say({ text: tag + this.line(p, 'permission'), mood: 'alert', ms: 9000, quiet: true });
+        this.rushToCursor(p);
+      } else if (ev.kind === 'waiting') {
+        p.say({ text: tag + this.line(p, 'waiting'), ms: 7000 });
+      }
+    },
+
+    /** 커서 아래쪽 바닥으로 달려온다. 커서가 다른 모니터에 있으면 그쪽 끝까지 */
+    rushToCursor(p) {
+      const S = p.S;
+      if (['drag', 'fall', 'climb', 'vanish', 'hugged'].indexOf(S.state) >= 0) return;
+      if (hug.busy(p)) hug.cancel();
+      if (cursor.x < 0) return p.setState('pet', 2.2);
+      p.goalX = clamp(cursor.x, stage.workLeft + p.halfWidth(), stage.workRight - p.halfWidth());
+      p.setState('rush', 8);          // 8초 안에 못 닿으면 그 자리에서 멈춘다
+    },
+  };
+
+  // ════════════════════════════════════════════════════════════
   //  메뉴
   // ════════════════════════════════════════════════════════════
   const MODE_LABEL = { knife: '칼', shotgun: '산탄총', pistol: '권총' };
@@ -768,6 +861,21 @@
       items: [{ label: '혼잣말', value: 'act:chat', checked: chatOn }],
     });
 
+    // Claude Code — 훅이 걸려 있으면 끝났을 때 · 허락이 필요할 때 알려 준다
+    const cs = claudeState || {};
+    const cItems = [];
+    if (cs.connected) {
+      cItems.push({ label: '알림 말하기', value: 'claude:speak', checked: cs.speak });
+      cItems.push({ label: '연결 끊기', value: 'claude:off', danger: true });
+    } else {
+      cItems.push({ label: cs.legacy ? '알림 연결하기 (예전 훅 바꾸기)' : '알림 연결하기', value: 'claude:on' });
+    }
+    sections.push({ title: 'Claude Code' + (cs.connected ? ' · 연결됨' : ''), items: cItems });
+
+    if (autoStart && autoStart.available) {
+      sections.push({ items: [{ label: '윈도우 시작할 때 실행', value: 'auto:toggle', checked: autoStart.on }] });
+    }
+
     sections.push({
       title: '리마인더',
       items: [
@@ -815,6 +923,21 @@
       const text = min + '분 지났어. 쉬는 게 어때?';
       reminders = await window.petAPI.addReminder({ text, at: Date.now() + min * 60000 });
       p.say({ text: min + '분 뒤에 알려줄게', mood: 'happy', ms: 2500 });
+    } else if (kind === 'claude') {
+      if (arg === 'on') {
+        claudeState = await window.petAPI.claudeConnect();
+        if (claudeState.error) p.say({ text: '연결 못 했어… ' + claudeState.error, mood: 'alert', ms: 8000 });
+        else p.say({ text: 'Claude 랑 연결했어. 일 끝나면 알려줄게', mood: 'happy', ms: 4000 });
+      } else if (arg === 'off') {
+        claudeState = await window.petAPI.claudeDisconnect();
+        p.say({ text: claudeState.error ? '끊지 못했어… ' + claudeState.error : 'Claude 알림 뗐어', ms: 3000 });
+      } else if (arg === 'speak') {
+        claudeState = await window.petAPI.claudeSetSpeak(!claudeState.speak);
+        p.say({ text: claudeState.speak ? 'Claude 소식 다시 전할게' : 'Claude 소식은 잠깐 조용히 있을게', ms: 2600 });
+      }
+    } else if (kind === 'auto') {
+      autoStart = await window.petAPI.setAutoStart(!autoStart.on);
+      p.say({ text: autoStart.on ? '컴퓨터 켜면 나도 나올게' : '이제 알아서 안 나올게', ms: 2600 });
     } else if (kind === 'unremind') {
       reminders = await window.petAPI.removeReminder(arg);
       p.say({ text: '알림 취소했어', ms: 2000 });
@@ -1012,9 +1135,14 @@
       if (prev === 'sleep') p.chatter.react('woken', 0.9);
       menuPet = p;
       // 열 때마다 목록을 다시 읽는다 — 실행 중에 넣은 캐릭터도 바로 보이게
-      Promise.all([window.petAPI.listCharacters(), window.petAPI.listDisplays()]).then(([list, ds]) => {
+      Promise.all([
+        window.petAPI.listCharacters(), window.petAPI.listDisplays(),
+        window.petAPI.claudeStatus(), window.petAPI.getAutoStart(),
+      ]).then(([list, ds, cs, as]) => {
         roster = list;
         displays = ds;
+        claudeState = cs;       // settings.json 을 손으로 고쳤을 수도 있어서 열 때마다 읽는다
+        autoStart = as;
         buildMenu(p);
         menu.show(S.x, S.y - p.height * 0.55, stage);
         syncInteractive(true);
@@ -1116,6 +1244,7 @@
 
     window.petAPI.onStage(applyStage);
     window.petAPI.onSay((msg) => pets[0] && pets[0].say(msg));   // 외부 알림은 주인공이 말한다
+    window.petAPI.onClaude((ev) => claude.on(ev));
     window.addEventListener('resize', () => pets.forEach((p) => p.view && p.view.resize()));
     requestAnimationFrame(frame);
 
@@ -1183,6 +1312,11 @@
       for (const q of pets) { q.S.y = stage.ground; q.S.vy = 0; q.setState('idle', 1e6); }
       talk.cooldown = 0;
       talk.tick(0);
+    } else if (cmd.indexOf('claude:') === 0) {
+      // Claude 반응 바로 보기 (--start=claude:done | fail | permission | waiting)
+      placeOnGround(p);
+      p.setState('idle', 2);
+      claude.on({ kind: cmd.slice(7), project: 'test', sec: 42, busy: 0 });
     } else if (cmd === 'recall') {
       pets.forEach((q, i) => q.drop((stage.workLeft + stage.workRight) / 2 + i * 180));
     } else if (cmd === 'next') {
@@ -1201,7 +1335,7 @@
 
   // 디버깅용
   window.__pets = pets;
-  window.__debug = { hug, talk, dark, setCompanion };   // 녹화 · 테스트 스크립트용
+  window.__debug = { hug, talk, dark, claude, setCompanion };   // 녹화 · 테스트 스크립트용
   if (location.search.indexOf('trace') >= 0) {
     setInterval(() => {
       for (const p of pets) {

@@ -213,6 +213,26 @@ Relax / Sit / Sleep` 여섯 개뿐이라, 벽 타기는 `Move`를 재생할 수�
 
 ---
 
+## ✅ v0.11 — Claude Code 연동 · 자동 시작 (완료)
+
+- [x] 메뉴 **Claude Code → 알림 연결하기** — `~/.claude/settings.json` 에 훅을 넣고 뺀다 (`src/claude-hooks.js`)
+  - 훅은 PowerShell 스크립트 한 줄 — Node 없이, 한글 깨짐 없이, 앱이 꺼져 있어도 Claude Code 를 막지 않는다
+  - 다른 훅은 그대로, 중복 없음, 예전 say.js 훅은 새 방식으로 교체, 쓰기 전 백업
+- [x] `/claude` 엔드포인트 — 훅 JSON 을 앱이 해석한다 (`UserPromptSubmit` · `Stop` · `StopFailure` · `Notification`)
+- [x] 반응: 끝남(20초 미만 턴은 조용히) · 허락 필요하면 **커서 쪽으로 달려오기** · 입력 대기 · 오류면 쓰러짐 ·
+      일하는 동안 앉아서 기다리기. 대사는 매니페스트 `claude` 로 덮어쓰기
+- [x] 메뉴 **윈도우 시작할 때 실행** (포터블 exe 원래 경로 등록)
+- [x] 새로고침 직후 마우스를 안 움직이면 렌더러가 커서 위치를 모르던 문제 (로드 끝나면 커서 좌표 재전송)
+- [x] 개발 옵션 `--start=claude:done|fail|permission|waiting`
+
+### 여기서 배운 것
+
+- Electron 의 userData 는 `APPDATA` 환경변수가 아니라 시스템 경로를 따른다. 격리해서 시험하려면
+  `app.setPath('userData', ...)` 를 main 을 불러오기 전에 해야 한다 (안 그러면 실행 중인 exe 의 중복 실행 잠금에 걸려 바로 꺼진다)
+- Claude Code 는 settings.json 의 훅 변경을 실행 중인 세션에도 바로 반영한다
+
+---
+
 # 앞으로
 
 
@@ -265,7 +285,7 @@ LUMI의 핵심 기능이자 난이도 점프 구간. Win32 API가 필요하다.
 
 ## 편의 기능
 
-- [ ] 자동 시작 (`app.setLoginItemSettings`)
+- [x] 자동 시작 (`app.setLoginItemSettings`) — v0.11
 - [ ] 전체화면 앱 감지 시 숨김 (Step 3과 같은 Win32 호출)
 - [ ] 리마인더 자유 입력 (시간·내용) — 투명 창은 입력을 못 받아 별도 입력 창 필요
 - [ ] 매일 반복 리마인더 UI (설정 파일로는 이미 가능)
