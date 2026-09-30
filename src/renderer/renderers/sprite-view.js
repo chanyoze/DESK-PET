@@ -16,6 +16,10 @@
  *
  * 발 위치는 칸마다 알파를 훑어서 찾는다. 게임마다 칸 안의 여백이 제각각이라
  * 사람이 맞추면 동작이 바뀔 때마다 캐릭터가 위아래로 튄다.
+ *
+ * 칸은 불러올 때 하나씩 자기 캔버스로 잘라 두고 거기서 그린다. 게임 시트는 칸이 빽빽해서
+ *  - 시트에서 바로 축소해 그리면 이웃 칸(특히 위 칸의 발 · 그림자)이 번져 들어와 머리 위에 선이 생기고
+ *  - 위 칸 그림자가 아예 칸 맨 윗줄로 1~3px 넘어와 있기도 하다 → 잘라 둘 때 지운다 (trimTopStray)
  */
 (function () {
   'use strict';
@@ -29,6 +33,28 @@
       img.onerror = () => reject(new Error('시트 로드 실패'));
       img.src = src;
     });
+  }
+
+  const STRAY_ROWS = 8;          // 칸 맨 위에서 이만큼 안에 있는 떨어진 점만 지운다
+
+  /**
+   * 칸 맨 위에 붙은 "떨어진 점"을 지운다 — 위 칸 그림(발 · 그림자)이 넘어온 것.
+   * 맨 윗줄에 픽셀이 있고, 그 아래 STRAY_ROWS 줄 안에 완전히 빈 줄이 있으면 그 위를 비운다.
+   * 머리카락처럼 그림에서 끊기지 않고 이어진 픽셀은 빈 줄이 없어서 건드리지 않는다.
+   * @returns 지운 줄 수
+   */
+  function trimTopStray(pixels, w, h) {
+    const rowEmpty = (y) => {
+      for (let x = 0; x < w; x++) if (pixels[(y * w + x) * 4 + 3] > 0) return false;
+      return true;
+    };
+    if (rowEmpty(0)) return 0;
+    for (let y = 1; y < Math.min(STRAY_ROWS, h); y++) {
+      if (!rowEmpty(y)) continue;
+      pixels.fill(0, 0, y * w * 4);
+      return y;
+    }
+    return 0;
   }
 
   /** 칸 안에서 실제로 그려진 영역 (알파 기준) */
@@ -61,22 +87,29 @@
       const clipsDef = character.clips || {};
       const textures = character.files.sheets || {};
 
-      // 시트를 읽고 알파를 한 번 뽑아 둔다
+      // 시트를 읽어 둔다 (칸은 쓰는 것만 아래에서 잘라 낸다)
       this.sheets = {};
       for (const [name, def] of Object.entries(sheetsDef)) {
         const img = await loadImage(textures[name]);
-        const c = document.createElement('canvas');
-        c.width = img.width;
-        c.height = img.height;
-        const cx = c.getContext('2d', { willReadFrequently: true });
-        cx.drawImage(img, 0, 0);
-        this.sheets[name] = {
-          img,
-          fw: def.frame[0],
-          fh: def.frame[1],
-          pixels: cx.getImageData(0, 0, img.width, img.height).data,
-        };
+        this.sheets[name] = { img, fw: def.frame[0], fh: def.frame[1] };
       }
+      this.frames = {};             // "시트|열|행" → { canvas, pixels }
+      let trimmed = 0;
+      const frameOf = (sheetName, sh, col, row) => {
+        const key = sheetName + '|' + col + '|' + row;
+        if (this.frames[key]) return this.frames[key];
+        const c = document.createElement('canvas');
+        c.width = sh.fw;
+        c.height = sh.fh;
+        const cx = c.getContext('2d', { willReadFrequently: true });
+        cx.drawImage(sh.img, col * sh.fw, row * sh.fh, sh.fw, sh.fh, 0, 0, sh.fw, sh.fh);   // 1:1 이라 번지지 않는다
+        const data = cx.getImageData(0, 0, sh.fw, sh.fh);
+        if (trimTopStray(data.data, sh.fw, sh.fh)) {
+          cx.putImageData(data, 0, 0);
+          trimmed++;
+        }
+        return (this.frames[key] = { canvas: c, pixels: data.data });
+      };
 
       // 동작마다 발 기준선(가장 아래 불투명 줄)을 잡는다.
       // 동작 안에서는 한 값으로 고정해야 프레임끼리 떨리지 않는다.
@@ -91,7 +124,7 @@
         let bottom = 0, top = sh.fh;
         for (const list of Object.values(lists)) {
           for (const [col, row] of list || []) {
-            const b = opaqueBox(sh.pixels, sh.img.width, col * sh.fw, row * sh.fh, sh.fw, sh.fh);
+            const b = opaqueBox(frameOf(def.sheet, sh, col, row).pixels, sh.fw, 0, 0, sh.fw, sh.fh);
             if (!b) continue;
             bottom = Math.max(bottom, b.bottom);
             top = Math.min(top, b.top);
@@ -99,6 +132,7 @@
         }
         this.clips[name] = {
           sheet: sh,
+          sheetName: def.sheet,
           fps: def.fps || 6,
           bob: def.bob || 0,
           once: !!def.once,
@@ -138,7 +172,8 @@
 
       this.resize();
       this.ready = true;
-      console.log('[sprite] 로드됨:', character.name, '배율', this.scale.toFixed(2), '동작:', this.animations.join(', '));
+      console.log('[sprite] 로드됨:', character.name, '배율', this.scale.toFixed(2), '칸', Object.keys(this.frames).length +
+        ' (위쪽 떨어진 점 지움 ' + trimmed + ')', '동작:', this.animations.join(', '));
       return this;
     }
 
@@ -146,6 +181,7 @@
       if (this.el && this.el.parentNode) this.el.parentNode.removeChild(this.el);
       this.el = null;
       this.sheets = null;
+      this.frames = null;
     }
 
     resize() {
@@ -209,11 +245,9 @@
       ctx.imageSmoothingEnabled = this.smooth;
       ctx.imageSmoothingQuality = 'high';
       ctx.scale(clip.mirror && facing < 0 ? -s : s, s * breathe);
-      ctx.drawImage(
-        sh.img,
-        col * sh.fw, row * sh.fh, sh.fw, sh.fh,
-        -sh.fw / 2, -clip.baseline, sh.fw, sh.fh
-      );
+      // 잘라 둔 칸에서 그린다 — 시트에서 바로 그리면 축소할 때 이웃 칸이 번져 들어온다
+      const frame = this.frames[clip.sheetName + '|' + col + '|' + row];
+      ctx.drawImage(frame.canvas, 0, 0, sh.fw, sh.fh, -sh.fw / 2, -clip.baseline, sh.fw, sh.fh);
     }
   }
 
