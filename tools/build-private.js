@@ -54,7 +54,39 @@ if (preset.companion === preset.character) preset.companion = null;
 fs.writeFileSync(path.join(ROOT, 'preset.json'), JSON.stringify(preset, null, 2));
 console.log('[private] 기본 설정:', JSON.stringify(preset));
 
+/**
+ * 윈도우: 숨김+시스템 파일(보안 프로그램의 미끼 파일)을 압축에서 빼는 7za 래퍼를 끼운다.
+ * 그런 파일이 있으면 7za 가 "Duplicate filename on disk" 로 멈춘다 (tools/7za-skip-hidden.cs 참고).
+ * 없는 PC에선 아무것도 안 빼므로 늘 끼워도 같다. csc 나 7za 를 못 찾으면 그냥 기본대로 간다.
+ */
+function useSkipHidden7za() {
+  if (process.platform !== 'win32' || process.env.ELECTRON_BUILDER_7ZIP_PATH) return;
+  const csc = path.join(process.env.WINDIR || 'C:\\Windows', 'Microsoft.NET', 'Framework64', 'v4.0.30319', 'csc.exe');
+  const cache = path.join(process.env.LOCALAPPDATA || '', 'electron-builder', 'Cache', '7zip@1.0.0');
+  let real = null;
+  try {
+    for (const d of fs.readdirSync(cache)) {
+      const p = path.join(cache, d, 'bin', '7za.exe');
+      if (fs.existsSync(p)) { real = p; break; }
+    }
+  } catch { /* 아직 한 번도 안 받았으면 없다 */ }
+  if (!fs.existsSync(csc) || !real) {
+    console.log('[private] 7za 래퍼 건너뜀 (csc 또는 7za 없음)');
+    return;
+  }
+  const src = path.join(__dirname, '7za-skip-hidden.cs');
+  const exe = path.join(ROOT, 'dist', '.tools', '7za-skip-hidden.exe');
+  if (!fs.existsSync(exe) || fs.statSync(exe).mtimeMs < fs.statSync(src).mtimeMs) {
+    fs.mkdirSync(path.dirname(exe), { recursive: true });
+    require('child_process').execFileSync(csc, ['/nologo', '/codepage:65001', '/out:' + exe, src], { stdio: 'inherit' });
+  }
+  process.env.DESKPET_REAL_7ZA = real;
+  process.env.ELECTRON_BUILDER_7ZIP_PATH = exe;
+  console.log('[private] 7za 래퍼 사용 (숨김+시스템 파일 제외)');
+}
+
 // 3. 빌드
+useSkipHidden7za();
 const config = {
   ...pkg.build,
   files: [
