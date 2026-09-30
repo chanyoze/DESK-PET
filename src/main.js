@@ -73,7 +73,15 @@ function listCharacters() {
       } catch { /* 깨진 매니페스트는 건너뛴다 */ }
     }
   }
-  return [...seen.values()].filter(Boolean);
+  // 설정(빌드 프리셋)의 onlyCharacters 가 있으면 그 캐릭터만 보인다 — 하데리어만 든 통파일처럼
+  // 공용 빌드 설정 때문에 기본 캐릭터가 같이 따라 들어가도 목록에는 안 나오게
+  const only = settings.load().onlyCharacters;
+  const list = [...seen.values()].filter(Boolean);
+  if (Array.isArray(only) && only.length) {
+    const picked = list.filter((c) => only.includes(c.id));
+    if (picked.length) return picked;
+  }
+  return list;
 }
 
 /**
