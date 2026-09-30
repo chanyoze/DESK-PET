@@ -22,7 +22,12 @@
 
 ## 2. 다음에 할 일
 
-### 2-1. 집 PC에서 먼저 (사용자가 "HANDOFF 읽고 레시피 기준으로 맞춰줘" 라고 할 것)
+### 2-1. 집 PC에서 먼저 — ✅ 1~3 완료 (2026-09-30 집 PC 세션)
+
+> 집 PC 설치본 캐릭터에 claude · recap · clips.run · clips.walk_pistol(마리나) 반영 완료,
+> `DeskPet-private-0.14.0.exe` 빌드 후 바탕화면에서 실행 중 (exe 안 캐릭터에 claude 7묶음 · recap 확인).
+> **남은 것: 4번(알림 연결하기 버튼 — 사용자)**, 바탕화면의 옛 `DeskPet-private-0.10.0.exe` 는 지워도 된다.
+
 1. `git pull` → `npm install`
 2. 집 PC 설치본 `%APPDATA%\deskpet\characters\termina-*\character.json` 에 레시피의
    `manifest.claude` · `manifest.recap` · `manifest.clips.run` · `manifest.clips.walk_pistol` 을 그대로 옮긴다
