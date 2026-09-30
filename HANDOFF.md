@@ -46,6 +46,9 @@ v0.10.0 공개 릴리스(에셋 없음) + **개인 빌드 exe**(에셋 포함, �
 - 회사 PC에도 이제 Node(v24)가 있다. 다만 훅은 Node 없이 PowerShell 로 돈다
 - Claude 세션 목록은 앱 메모리에만 있다 — 앱을 다시 켜면 비고, 이미 떠 있던 세션은 다음 훅부터 다시 잡힌다
   (시작 시각을 몰라서 첫 Stop 은 "끝났어" 로 말한다)
+- 회사 PC 보안 프로그램이 폴더에 숨김+시스템 미끼 파일(`locales\ZULRFF.DOCX`, 같은 이름 두 번)을 끼워 넣어
+  포터블 빌드의 7za 가 "Duplicate filename on disk" 로 멈췄다 → `dist:private` 가 윈도우에서 `tools/7za-skip-hidden.cs` 를
+  csc 로 컴파일해 그런 파일을 압축에서 뺀다 (지우지는 않는다). 공개 빌드(`npm run dist`)엔 아직 안 붙였다
 - 셸 heredoc 안의 `\\` 는 `\` 로 줄어든다 (2026-09-30 README 경로가 깨졌던 원인). 역슬래시가 든 내용은 편집 도구로 쓸 것
 - 회사 PC의 exe 는 **관리자 권한으로 떠 있을 수 있어서** 셸에서 끌 수 없다 (액세스 거부). 사용자에게 메뉴 → 종료를 부탁할 것.
   exe 를 끄지 않고 개발 버전을 시험하려면 하네스에서 `app.setPath('userData', 임시폴더)` 후 main 을 require 하고,
