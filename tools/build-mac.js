@@ -58,6 +58,7 @@ const config = {
   },
 };
 
-builder.build({ targets: builder.Platform.MAC.createTarget(), config })
+// publish: 'never' — CI 에서는 electron-builder 가 알아서 GitHub 에 올리려 든다. 릴리스는 워크플로가 올린다
+builder.build({ targets: builder.Platform.MAC.createTarget(), config, publish: 'never' })
   .then((files) => console.log('[mac] 완료:', files.filter((f) => /\.zip$/.test(f)).join(', ')))
   .catch((e) => { console.error('[mac] 빌드 실패:', e.message); process.exit(1); });
