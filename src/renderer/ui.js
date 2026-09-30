@@ -37,6 +37,7 @@
       this.current = msg;
       this.el.textContent = msg.text;
       this.el.dataset.mood = msg.mood || 'normal';
+      this.el.dataset.link = msg.sid ? '1' : '';     // Claude 세션 말풍선 — 누르면 그 터미널로
       this.el.hidden = false;
 
       // 글이 길수록 오래 띄운다 (읽을 시간)
@@ -88,11 +89,35 @@
       }, true);
     }
 
-    /** sections: [{title, items:[{label, value, checked, danger}]}] */
+    /**
+     * sections: [{title, fold, items:[{label, value, checked, danger}]}]
+     * fold 가 있으면 접는 섹션 — 제목을 누르면 펼치고 접는다. 접혀 있을 땐 제목 옆에 지금 값(체크된 항목)을 보여 준다.
+     * 펼침 상태는 fold 키로 기억한다 (메뉴를 다시 열어도 유지).
+     */
     build(sections) {
       this.el.innerHTML = '';
       for (const sec of sections) {
-        if (sec.title) {
+        let box = this.el;
+        if (sec.fold) {
+          const open = !!PetMenu.unfolded[sec.fold];
+          const cur = sec.items.filter((it) => it.checked).map((it) => it.label).join(', ');
+          const h = document.createElement('button');
+          h.className = 'menu-title menu-fold' + (open ? ' open' : '');
+          h.textContent = (open ? '▾ ' : '▸ ') + sec.title + (!open && cur ? ' · ' + cur : '');
+          box = document.createElement('div');
+          box.hidden = !open;
+          h.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const now = box.hidden;
+            PetMenu.unfolded[sec.fold] = now;
+            box.hidden = !now;
+            h.classList.toggle('open', now);
+            h.textContent = (now ? '▾ ' : '▸ ') + sec.title + (!now && cur ? ' · ' + cur : '');
+            this.reposition();
+          });
+          this.el.appendChild(h);
+          this.el.appendChild(box);
+        } else if (sec.title) {
           const h = document.createElement('div');
           h.className = 'menu-title';
           h.textContent = sec.title;
@@ -107,7 +132,7 @@
             this.close();
             this.onAction(it.value);
           });
-          this.el.appendChild(b);
+          box.appendChild(b);
         }
         const hr = document.createElement('div');
         hr.className = 'menu-sep';
@@ -118,13 +143,22 @@
     }
 
     show(x, y, stage) {
+      this._at = { x, y, stage };
       this.el.hidden = false;
       this.open = true;
+      this.reposition();
+    }
+
+    /** 캐릭터 위에 띄운다. 위에 자리가 없으면 아래로, 아래도 모자라면 화면 안에 가둔다 (길면 스크롤) */
+    reposition() {
+      if (!this._at) return;
+      const { x, y, stage } = this._at;
       const w = this.el.offsetWidth;
       const h = this.el.offsetHeight;
       let left = Math.max(stage.workLeft + 6, Math.min(stage.workRight - w - 6, x - w / 2));
       let top = y - h - 10;
       if (top < stage.workTop + 6) top = y + 16;
+      if (top + h > stage.ground - 6) top = Math.max(stage.workTop + 6, stage.ground - 6 - h);
       this.el.style.transform = 'translate3d(' + left.toFixed(0) + 'px,' + top.toFixed(0) + 'px,0)';
       this._rect = { x: left, y: top, w, h };
     }
@@ -141,6 +175,9 @@
       return this.open ? this._rect : null;
     }
   }
+
+  /** 펼쳐 둔 접는 섹션 (fold 키 → true). 메뉴를 다시 열어도 유지된다 */
+  PetMenu.unfolded = {};
 
   window.PetUI = { Bubble, PetMenu };
 })();

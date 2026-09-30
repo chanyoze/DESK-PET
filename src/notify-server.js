@@ -11,6 +11,7 @@
  *
  * /claude — Claude Code 훅이 stdin 으로 받은 JSON 을 그대로 POST 한다 (src/claude-hooks.js).
  *           무슨 말을 할지는 앱이 hook_event_name 등을 보고 정한다.
+ *           응답에 needWindow(세션 id)가 있으면 훅이 터미널 창을 찾아 /claude-window 로 알려 준다.
  */
 const http = require('http');
 
@@ -24,7 +25,7 @@ function readBody(req, limit, cb) {
     if (size > limit) return req.destroy();
     chunks.push(c);
   });
-  req.on('end', () => cb(Buffer.concat(chunks).toString('utf8').replace(/^﻿/, '')));
+  req.on('end', () => cb(Buffer.concat(chunks).toString('utf8').replace(/^\uFEFF/, '')));
 }
 
 function start(port, onMessage, onClaude) {
@@ -36,7 +37,7 @@ function start(port, onMessage, onClaude) {
       res.end(JSON.stringify({ ok: true, app: 'deskpet' }));
       return;
     }
-    if (url.pathname === '/claude' && req.method === 'POST') {
+    if ((url.pathname === '/claude' || url.pathname === '/claude-window') && req.method === 'POST') {
       // Stop 의 last_assistant_message 가 길 수 있어서 한도를 넉넉히 둔다
       readBody(req, 1024 * 1024, (body) => {
         let ev;
@@ -47,8 +48,8 @@ function start(port, onMessage, onClaude) {
           res.end(JSON.stringify({ ok: false, error: 'JSON 아님' }));
           return;
         }
-        if (onClaude) onClaude(ev);
-        res.end(JSON.stringify({ ok: true }));
+        const extra = onClaude ? onClaude(ev, url.pathname === '/claude-window' ? 'window' : 'event') : null;
+        res.end(JSON.stringify({ ok: true, ...(extra || {}) }));
       });
       return;
     }
