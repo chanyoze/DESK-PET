@@ -296,7 +296,7 @@ Relax / Sit / Sleep` 여섯 개뿐이라, 벽 타기는 `Move`를 재생할 수�
 - [x] 맥 빌드 — GitHub Actions 맥 러너, universal zip, ad-hoc 서명 (`.github/workflows/mac.yml`, `tools/build-mac.js`)
 - [x] 첫 실행 자동 설치 — 프리셋 `autoInstall` 의 레시피 캐릭터를 쓰는 사람 PC에서 받는다 (그림을 빌드에 안 넣음)
 - [x] 맥에서 윈도우 전용 기능 건너뛰기 · Dock 숨김 · 모든 Spaces · 메뉴바 아이콘 크기
-- [ ] 맥에서 실제 확인 (지인) · 맥용 Claude 훅(sh + curl)
+- [ ] 맥에서 실제 확인 (지인) — 맥용 Claude 훅은 필요 없음 (지인이 AI CLI 안 씀)
 
 ### 여기서 배운 것
 
