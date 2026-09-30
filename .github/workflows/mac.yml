@@ -1,7 +1,9 @@
 name: Build macOS app
 
 # 수동 실행 — Actions 탭에서 "Run workflow" 또는 `gh workflow run mac.yml`
-# 그림 없는 앱을 빌드하고, 프리셋의 autoInstall 로 받는 사람 맥에서 캐릭터를 받게 한다.
+#  - bundle 비움: 그림 없는 앱 → 공개 프리릴리스 mac-v버전 (캐릭터는 받는 사람 맥에서 처음 켤 때 받는다)
+#  - bundle 채움: 레시피 캐릭터를 앱 안에 넣은 통파일 → 그림이 들어가므로 **릴리스에 올리지 않고**
+#    1일짜리 아티팩트로만 남긴다. 받은 뒤 바로 지운다 (gh api -X DELETE .../actions/artifacts/<id>)
 on:
   workflow_dispatch:
     inputs:
@@ -9,9 +11,14 @@ on:
         description: '기본 설정 프리셋'
         default: 'tools/presets/herdier.json'
         required: true
+      bundle:
+        description: '앱에 넣을 레시피 (예: pokemon/herdier) — 비우면 그림 없는 앱'
+        default: ''
+        required: false
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   build:
@@ -27,16 +34,27 @@ jobs:
       - run: npm ci
 
       - name: 빌드 (universal zip, ad-hoc 서명)
-        run: node tools/build-mac.js "${{ inputs.preset }}"
+        run: node tools/build-mac.js "${{ inputs.preset }}" ${{ inputs.bundle && format('--bundle={0}', inputs.bundle) || '' }}
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
-      - uses: actions/upload-artifact@v4
+      - name: 그림 없는 앱 — 아티팩트
+        if: ${{ !inputs.bundle }}
+        uses: actions/upload-artifact@v4
         with:
           name: DeskPet-mac
           path: dist/mac/*.zip
 
-      - name: 릴리스에 올리기 (프리릴리스 mac-v버전)
+      - name: 통파일 — 1일짜리 아티팩트만 (릴리스 금지)
+        if: ${{ inputs.bundle }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: DeskPet-mac-bundled
+          path: dist/mac/*.zip
+          retention-days: 1
+
+      - name: 릴리스에 올리기 (그림 없는 앱만, 프리릴리스 mac-v버전)
+        if: ${{ !inputs.bundle }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
