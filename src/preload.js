@@ -29,6 +29,17 @@ contextBridge.exposeInMainWorld('petAPI', {
   setCompanion: (id) => ipcRenderer.invoke('settings:setCompanion', id),
   quit: () => ipcRenderer.send('app:quit'),
 
+  // ── Claude Code 연결 · 자동 시작 ──
+  /** { connected, legacy, speak, error? } — ~/.claude/settings.json 에 우리 훅이 걸려 있는지 */
+  claudeStatus: () => ipcRenderer.invoke('claude:status'),
+  claudeConnect: () => ipcRenderer.invoke('claude:connect'),
+  claudeDisconnect: () => ipcRenderer.invoke('claude:disconnect'),
+  /** 연결은 둔 채 말만 끄고 켠다 */
+  claudeSetSpeak: (v) => ipcRenderer.invoke('claude:setSpeak', v),
+  /** { available, on } — 개발 실행에선 available=false */
+  getAutoStart: () => ipcRenderer.invoke('autostart:get'),
+  setAutoStart: (v) => ipcRenderer.invoke('autostart:set', v),
+
   // ── 메인 → 렌더러 ──
   /** 트레이 메뉴 등에서 오는 명령 */
   onCommand: (cb) => ipcRenderer.on('pet:command', (_e, cmd) => cb(cmd)),
@@ -36,6 +47,8 @@ contextBridge.exposeInMainWorld('petAPI', {
   onStage: (cb) => ipcRenderer.on('pet:stage', (_e, stage) => cb(stage)),
   /** 외부 알림·리마인더 → 말풍선 */
   onSay: (cb) => ipcRenderer.on('pet:say', (_e, msg) => cb(msg)),
+  /** Claude Code 훅 이벤트 { kind: start|done|quick|fail|permission|waiting, project, sec, busy, quiet } */
+  onClaude: (cb) => ipcRenderer.on('pet:claude', (_e, ev) => cb(ev)),
   /** 메인이 읽은 커서 좌표 (창 기준) — 클릭 통과 중에도 온다 */
   onCursor: (cb) => ipcRenderer.on('pet:cursor', (_e, p) => cb(p)),
 });

@@ -4,8 +4,12 @@ const fs = require('fs');
 const { pathToFileURL } = require('url');
 const settings = require('./settings');
 const notify = require('./notify-server');
+const claudeHooks = require('./claude-hooks');
 
 const DEV = process.argv.includes('--dev');
+
+/** Claude Code 훅이 부르는 스크립트 (연결할 때 만든다). 이름의 'deskpet' 이 우리 훅 표식이다 */
+const claudeHookScript = () => path.join(app.getPath('userData'), 'deskpet-claude-hook.ps1');
 
 /**
  * 캐릭터는 두 곳에서 읽는다.
@@ -212,6 +216,9 @@ function createWindow() {
   // "클릭 안 받음"에서 시작하는데, 메뉴를 누르던 중의 "받음" 상태가 남아 있으면
   // 그 모니터 전체의 클릭을 이 창이 먹어 버린다.
   win.webContents.on('did-start-loading', () => win?.setIgnoreMouseEvents(true, { forward: true }));
+  // 커서 좌표는 바뀔 때만 보내는데, 렌더러가 뜨기 전에 보낸 값은 버려진다.
+  // 로드가 끝나면 한 번 다시 보내게 해서 마우스를 안 움직여도 커서 위치를 알게 한다.
+  win.webContents.on('did-finish-load', () => { lastCursor = ''; });
 
   const flags = ['trace', 'hitbox'].filter((f) => process.argv.includes('--' + f));
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'), flags.length ? { search: flags.join('&') } : {});
@@ -361,6 +368,74 @@ function startReminderLoop() {
   }, 20000);
 }
 
+/**
+ * Claude Code 훅 이벤트 → 펫 반응.
+ * 훅이 넘긴 JSON 을 해석해서 렌더러에 { kind, project, sec } 로 보낸다. 대사는 렌더러가 고른다.
+ *
+ *  UserPromptSubmit            → start       (일 시작 — 시각을 기억해 둔다)
+ *  Stop                        → done        (CLAUDE_QUIET_SEC 보다 짧게 끝난 턴은 quick — 말 안 함)
+ *  StopFailure                 → fail        (API 오류 등으로 끊김)
+ *  Notification permission_prompt           → permission (허락 필요 — 커서 쪽으로 달려온다)
+ *  Notification idle_prompt · agent_needs_input · elicitation_dialog → waiting
+ *
+ * Stop 은 짧은 대답에도 매번 오므로, 사용자가 터미널을 보고 있을 법한 짧은 턴은 조용히 넘긴다.
+ */
+const CLAUDE_QUIET_SEC = 20;
+const claudeTurns = new Map();     // session_id → 시작 시각(ms)
+const WAITING_TYPES = ['idle_prompt', 'agent_needs_input', 'elicitation_dialog', 'elicitation_url_dialog'];
+
+function onClaudeEvent(ev) {
+  const name = ev.hook_event_name;
+  const sid = ev.session_id || '';
+  const project = ev.cwd ? path.basename(String(ev.cwd)) : '';
+  console.log('[claude]', name, ev.notification_type || '', project);
+
+  let out = null;
+  if (name === 'UserPromptSubmit') {
+    // 끝나지 않은 채 버려진 세션이 쌓이지 않게 하루 넘은 건 치운다
+    for (const [k, t] of claudeTurns) if (Date.now() - t > 864e5) claudeTurns.delete(k);
+    claudeTurns.set(sid, Date.now());
+    out = { kind: 'start' };
+  } else if (name === 'Stop') {
+    const t0 = claudeTurns.get(sid);
+    claudeTurns.delete(sid);
+    const sec = t0 ? Math.round((Date.now() - t0) / 1000) : null;
+    out = { kind: sec != null && sec < CLAUDE_QUIET_SEC ? 'quick' : 'done', sec };
+  } else if (name === 'StopFailure') {
+    claudeTurns.delete(sid);
+    out = { kind: 'fail' };
+  } else if (name === 'Notification') {
+    const t = ev.notification_type || '';
+    const msg = String(ev.message || '');
+    // notification_type 이 없는 옛 버전은 메시지로 짐작한다
+    if (t === 'permission_prompt' || (!t && /permission/i.test(msg))) out = { kind: 'permission' };
+    else if (WAITING_TYPES.includes(t) || (!t && /waiting/i.test(msg))) out = { kind: 'waiting' };
+  }
+  if (!out) return;
+  if (!settings.load().speakOnClaude && out.kind !== 'start') out.quiet = true;
+  win?.webContents.send('pet:claude', { ...out, project, busy: claudeTurns.size });
+}
+
+function claudeStatus() {
+  const cfg = settings.load();
+  return {
+    ...claudeHooks.status({ scriptPath: claudeHookScript() }),
+    speak: cfg.speakOnClaude !== false,
+  };
+}
+
+/**
+ * 윈도우 시작 시 자동 실행.
+ * 포터블 exe 는 실행할 때마다 임시 폴더에 풀려서 execPath 가 매번 바뀐다 →
+ * electron-builder 가 넣어 주는 PORTABLE_EXECUTABLE_FILE(원래 exe 경로)을 등록해야 한다.
+ * 개발 실행(electron .)은 등록하지 않는다.
+ */
+const loginExe = () => process.env.PORTABLE_EXECUTABLE_FILE || process.execPath;
+function autoStartStatus() {
+  if (!app.isPackaged) return { available: false, on: false };
+  return { available: true, on: app.getLoginItemSettings({ path: loginExe() }).openAtLogin };
+}
+
 // 두 번 실행 방지
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -374,8 +449,18 @@ if (!app.requestSingleInstanceLock()) {
 
     // 외부에서 말을 시킬 수 있는 로컬 서버 (Claude Code 훅, 빌드 스크립트 등)
     notify.start(cfg.notifyPort, (msg) => {
+      console.log('[notify] say:', msg.mood, msg.text);
       win?.webContents.send('pet:say', msg);
-    });
+    }, onClaudeEvent);
+
+    // 이미 연결돼 있으면 훅 스크립트를 이 버전 것으로 새로 쓴다 (포트 · 내용이 바뀌었을 수 있다)
+    if (fs.existsSync(claudeHookScript())) {
+      try {
+        fs.writeFileSync(claudeHookScript(), claudeHooks.hookScript(cfg.notifyPort), 'utf8');
+      } catch (e) {
+        console.error('[claude] 훅 스크립트 갱신 실패:', e.message);
+      }
+    }
 
     startReminderLoop();
 
@@ -424,6 +509,37 @@ ipcMain.handle('reminders:remove', (_e, id) => {
   return list;
 });
 ipcMain.handle('settings:setChat', (_e, v) => settings.save({ chatter: !!v }));
+
+// ── Claude Code 연결 · 자동 시작 ─────────────────────────────
+ipcMain.handle('claude:status', () => claudeStatus());
+ipcMain.handle('claude:connect', () => {
+  try {
+    claudeHooks.install({ scriptPath: claudeHookScript(), port: settings.load().notifyPort });
+    return claudeStatus();
+  } catch (e) {
+    console.error('[claude] 연결 실패:', e.message);
+    return { ...claudeStatus(), error: e.message };
+  }
+});
+ipcMain.handle('claude:disconnect', () => {
+  try {
+    claudeHooks.uninstall({ scriptPath: claudeHookScript() });
+    try { fs.unlinkSync(claudeHookScript()); } catch { /* 없으면 그만 */ }
+    return claudeStatus();
+  } catch (e) {
+    console.error('[claude] 연결 끊기 실패:', e.message);
+    return { ...claudeStatus(), error: e.message };
+  }
+});
+ipcMain.handle('claude:setSpeak', (_e, v) => {
+  settings.save({ speakOnClaude: !!v });
+  return claudeStatus();
+});
+ipcMain.handle('autostart:get', () => autoStartStatus());
+ipcMain.handle('autostart:set', (_e, on) => {
+  if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: !!on, path: loginExe() });
+  return autoStartStatus();
+});
 ipcMain.handle('settings:setTone', (_e, v) => settings.save({ tone: v === 'dark' ? 'dark' : 'light' }));
 ipcMain.handle('settings:setCompanion', (_e, id) => settings.save({ companion: id || null }));
 ipcMain.handle('settings:setMode', (_e, id, m) => {

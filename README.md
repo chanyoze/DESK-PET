@@ -20,7 +20,7 @@
 
 | | |
 |---|---|
-| 캐릭터 **좌클릭** | 메뉴 (캐릭터 · 크기 · 쓰다듬기 · 리마인더 · 종료) |
+| 캐릭터 **좌클릭** | 메뉴 (캐릭터 · 크기 · 쓰다듬기 · 리마인더 · Claude Code 연결 · 자동 시작 · 종료) |
 | 캐릭터 **드래그** | 집어서 던지기 |
 | 말풍선 클릭 | 넘기기 |
 | 트레이 아이콘 **우클릭** | 같은 메뉴 |
@@ -222,7 +222,8 @@ npm run extract-rpgmv -- "<게임 폴더>" tools/recipes/termina/samarie.json --
 src/
   main.js                  Electron 메인 — 창 생성, 클릭 통과 토글, 트레이, 캐릭터 로드, 리마인더
   settings.js              설정 저장 (userData/settings.json)
-  notify-server.js         127.0.0.1 전용 알림 서버 — 외부에서 말 시키기
+  notify-server.js         127.0.0.1 전용 알림 서버 — 외부에서 말 시키기 (/say, /claude)
+  claude-hooks.js          ~/.claude/settings.json 에 우리 훅 넣고 빼기 (electron 없이 시험 가능)
   preload.js               contextBridge (petAPI)
   renderer/
     index.html
@@ -341,24 +342,31 @@ curl -X POST http://127.0.0.1:45678/say \
 `mood` 는 `normal` / `happy` / `alert` 이고 말풍선 색과 캐릭터 반응 동작이 달라진다.
 앱이 꺼져 있으면 `tools/say.js` 는 **조용히 무시한다** — 훅에서 불려도 실패하지 않는다.
 
-### Claude Code 완료 알림
+### Claude Code 연동
 
-`~/.claude/settings.json` 에 훅을 걸면 클로드가 작업을 마칠 때 캐릭터가 알려준다.
+캐릭터 좌클릭 메뉴 → **Claude Code → 알림 연결하기** 한 번이면 끝이다.
+`~/.claude/settings.json` 에 훅이 들어가고, 실행 중인 Claude Code 세션에도 바로 적용된다.
 
-```json
-{
-  "hooks": {
-    "Stop": [
-      { "hooks": [{ "type": "command",
-        "command": "node \"C:/study/deskpet/tools/say.js\" \"작업 끝났어! 확인해봐\" happy" }] }
-    ],
-    "Notification": [
-      { "hooks": [{ "type": "command",
-        "command": "node \"C:/study/deskpet/tools/say.js\" \"뭔가 물어보고 있어\" alert" }] }
-    ]
-  }
-}
-```
+| Claude Code 에서 | 캐릭터 |
+|---|---|
+| 작업이 끝남 (20초 넘게 걸린 턴) | `[프로젝트] 끝났어` — 5분 넘으면 걸린 시간도 말한다 |
+| 짧은 대답 (20초 미만) | 조용히 넘긴다 — 터미널을 보고 있을 테니까 |
+| 허락이 필요함 (`permission_prompt`) | 커서 쪽으로 달려와서 알려 준다 |
+| 입력을 기다림 (`idle_prompt` 등) | `네 대답 기다리고 있어` |
+| 오류로 끊김 (`StopFailure`) | 쓰러졌다 일어난다 (쓰러지는 동작이 있는 캐릭터) |
+| 일하는 중 | 주인공이 멀리 안 가고 앉아서 기다린다 |
+
+- 메뉴의 **알림 말하기** 로 연결은 둔 채 말만 끌 수 있고, **연결 끊기** 는 우리 훅만 뺀다
+- 동작 방식: 훅 명령은 `powershell -File "%APPDATA%/deskpet/deskpet-claude-hook.ps1"` 한 줄이다.
+  스크립트가 Claude Code 가 주는 JSON 을 **바이트 그대로** `127.0.0.1:45678/claude` 로 넘기고,
+  무슨 말을 할지는 앱이 정한다
+  - Node 가 없는 PC 에서도 된다 (윈도우 기본 PowerShell)
+  - 명령줄에 한글이 없어서 CP949 로 깨질 일이 없다
+  - 앱이 꺼져 있으면 1초 안에 조용히 끝난다 (연결부터 0.3초만 확인) — Claude Code 를 막지 않는다
+- 다른 훅은 건드리지 않는다. 쓰기 전에 `settings.json.deskpet-bak` 으로 백업한다.
+  명령에 `deskpet` 이 들어간 훅을 우리 것으로 보므로 예전 방식(`node .../deskpet/tools/say.js`)도 연결할 때 새 방식으로 바뀐다
+- 캐릭터마다 대사를 바꾸려면 `character.json` 에
+  `"claude": { "done": [...], "long": ["{m}분 걸렸어"], "fail": [...], "permission": [...], "waiting": [...] }`
 
 ## 애니메이션 활용
 
@@ -383,8 +391,12 @@ IK로 만들어낼 수 있으므로 그쪽에서만 켠다.
 `app.getPath('userData')/settings.json` 에 저장된다.
 
 ```json
-{ "character": "mudrock", "companion": null, "display": null, "sizeScale": 1, "reminders": [], "notifyPort": 45678 }
+{ "character": "mudrock", "companion": null, "display": null, "sizeScale": 1, "reminders": [], "notifyPort": 45678, "speakOnClaude": true }
 ```
+
+**윈도우 시작할 때 실행** 은 메뉴에서 켠다 (exe 로 실행했을 때만 보인다). 포터블 exe 는 실행할 때마다
+임시 폴더에 풀리므로 그 경로가 아니라 원래 exe 경로(`PORTABLE_EXECUTABLE_FILE`)를 등록한다.
+exe 를 다른 곳으로 옮기면 한 번 껐다 다시 켤 것.
 
 ## 개발용 옵션
 
@@ -399,6 +411,7 @@ npx electron . --start=mode:knife     # 무장 모드로 계속 걷기
 npx electron . --start=hug            # 껴안기 바로 보기 (짝이 없으면 저장하지 않고 불러온다)
 npx electron . --start=talk           # 둘의 대화 바로 보기
 npx electron . --start=nightmare      # 원작처럼 연출 바로 보기 (nightmare · down · bloodcast · teleport)
+npx electron . --start=claude:done    # Claude 반응 바로 보기 (done · fail · permission · waiting)
 npx electron . --character=kaltsit    # 특정 캐릭터로 실행
 npx electron . --shot=out.png,5000    # 창 내용만 PNG로 저장하고 종료
 npx electron . --hitbox               # 클릭 판정 영역을 화면에 표시

@@ -8,16 +8,48 @@
  *   curl "http://127.0.0.1:45678/say?text=%EB%81%9D&mood=happy"
  *
  * mood: normal | happy | alert   (캐릭터가 어떤 애니메이션으로 반응할지)
+ *
+ * /claude — Claude Code 훅이 stdin 으로 받은 JSON 을 그대로 POST 한다 (src/claude-hooks.js).
+ *           무슨 말을 할지는 앱이 hook_event_name 등을 보고 정한다.
  */
 const http = require('http');
 
-function start(port, onMessage) {
+/** 요청 본문을 Buffer 로 모아 UTF-8 로 한 번에 디코드한다 */
+function readBody(req, limit, cb) {
+  // 문자열로 이어붙이면 청크 경계에서 한글 같은 멀티바이트 문자가 깨진다.
+  const chunks = [];
+  let size = 0;
+  req.on('data', (c) => {
+    size += c.length;
+    if (size > limit) return req.destroy();
+    chunks.push(c);
+  });
+  req.on('end', () => cb(Buffer.concat(chunks).toString('utf8').replace(/^﻿/, '')));
+}
+
+function start(port, onMessage, onClaude) {
   const server = http.createServer((req, res) => {
     const url = new URL(req.url, 'http://127.0.0.1');
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
 
     if (url.pathname === '/ping') {
       res.end(JSON.stringify({ ok: true, app: 'deskpet' }));
+      return;
+    }
+    if (url.pathname === '/claude' && req.method === 'POST') {
+      // Stop 의 last_assistant_message 가 길 수 있어서 한도를 넉넉히 둔다
+      readBody(req, 1024 * 1024, (body) => {
+        let ev;
+        try {
+          ev = JSON.parse(body);
+        } catch {
+          res.statusCode = 400;
+          res.end(JSON.stringify({ ok: false, error: 'JSON 아님' }));
+          return;
+        }
+        if (onClaude) onClaude(ev);
+        res.end(JSON.stringify({ ok: true }));
+      });
       return;
     }
     if (url.pathname !== '/say') {
@@ -41,17 +73,7 @@ function start(port, onMessage) {
       return;
     }
 
-    // 버퍼를 모아 두었다가 한 번에 UTF-8로 디코드한다.
-    // 문자열로 이어붙이면 청크 경계에서 한글 같은 멀티바이트 문자가 깨진다.
-    const chunks = [];
-    let size = 0;
-    req.on('data', (c) => {
-      size += c.length;
-      if (size > 8192) return req.destroy();
-      chunks.push(c);
-    });
-    req.on('end', () => {
-      const body = Buffer.concat(chunks).toString('utf8');
+    readBody(req, 8192, (body) => {
       let payload = {};
       try {
         payload = JSON.parse(body);
