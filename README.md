@@ -20,7 +20,7 @@
 
 | | |
 |---|---|
-| 캐릭터 **좌클릭** | 메뉴 (캐릭터 · 크기 · 쓰다듬기 · 리마인더 · Claude Code 연결 · 자동 시작 · 종료) |
+| 캐릭터 **좌클릭** | 메뉴 (캐릭터 · 크기 · 쓰다듬기 · 리마인더 · Claude Code 연결 · 커서 놀이 · 자동 시작 · 종료) — 설정 묶음은 제목을 눌러 펼친다, 빈 곳을 누르면 닫힌다 |
 | 캐릭터 **드래그** | 집어서 던지기 |
 | 말풍선 클릭 | 넘기기 |
 | 트레이 아이콘 **우클릭** | 같은 메뉴 |
@@ -223,7 +223,8 @@ src/
   main.js                  Electron 메인 — 창 생성, 클릭 통과 토글, 트레이, 캐릭터 로드, 리마인더
   settings.js              설정 저장 (userData/settings.json)
   notify-server.js         127.0.0.1 전용 알림 서버 — 외부에서 말 시키기 (/say, /claude)
-  claude-hooks.js          ~/.claude/settings.json 에 우리 훅 넣고 빼기 (electron 없이 시험 가능)
+  claude-hooks.js          ~/.claude/settings.json 에 우리 훅 넣고 빼기 + 훅 스크립트 (electron 없이 시험 가능)
+  ps-scripts.js            userData 에 쓰는 PowerShell 스크립트 — 창 앞으로 가져오기 · deskpet.ps1 명령줄 도구
   preload.js               contextBridge (petAPI)
   renderer/
     index.html
@@ -354,7 +355,12 @@ curl -X POST http://127.0.0.1:45678/say \
 | 허락이 필요함 (`permission_prompt`) | 커서 쪽으로 달려와서 알려 준다 |
 | 입력을 기다림 (`idle_prompt` 등) | `네 대답 기다리고 있어` |
 | 오류로 끊김 (`StopFailure`) | 쓰러졌다 일어난다 (쓰러지는 동작이 있는 캐릭터) |
-| 일하는 중 | 주인공이 멀리 안 가고 앉아서 기다린다 |
+| 일하는 중 | 주인공이 멀리 안 가고 앉아서 기다린다. 3분 넘으면 꾸벅꾸벅 졸다가, 끝나면 깨서 알려 준다 |
+
+- **세션 현황** — 메뉴의 "Claude 세션" 에 떠 있는 세션이 최근 소식 순으로 나온다 (`DESK-PET · 작업 중 3분째`, `허락 기다림 30초 전` …)
+- **그 창으로 가기** — Claude 말풍선(점선 밑줄)이나 세션 항목을 누르면 그 세션의 터미널 창이 앞으로 온다 (↗ 표시가 창을 찾아 둔 세션)
+  - 세션마다 처음 한 번만, 훅이 자기 조상 프로세스를 따라 올라가 창(Windows Terminal · VS Code · 콘솔)을 찾아 둔다 (약 0.6초)
+  - Windows Terminal 은 창 단위라 탭이 여러 개면 창만 앞으로 온다
 
 - 메뉴의 **알림 말하기** 로 연결은 둔 채 말만 끌 수 있고, **연결 끊기** 는 우리 훅만 뺀다
 - 동작 방식: 훅 명령은 `powershell -File "%APPDATA%/deskpet/deskpet-claude-hook.ps1"` 한 줄이다.
@@ -366,7 +372,29 @@ curl -X POST http://127.0.0.1:45678/say \
 - 다른 훅은 건드리지 않는다. 쓰기 전에 `settings.json.deskpet-bak` 으로 백업한다.
   명령에 `deskpet` 이 들어간 훅을 우리 것으로 보므로 예전 방식(`node .../deskpet/tools/say.js`)도 연결할 때 새 방식으로 바뀐다
 - 캐릭터마다 대사를 바꾸려면 `character.json` 에
-  `"claude": { "done": [...], "long": ["{m}분 걸렸어"], "fail": [...], "permission": [...], "waiting": [...] }`
+  `"claude": { "done": [...], "long": ["{m}분 걸렸어"], "sleepy": [...], "fail": [...], "permission": [...], "waiting": [...], "noWindow": [...] }`
+  (마리나 · 사마리는 레시피에 들어 있다)
+
+### 빌드 · 서버 알림 (`deskpet.ps1`)
+
+앱이 켜질 때 `%APPDATA%\deskpet\deskpet.ps1` 을 만들어 둔다. Node 없이 PowerShell 만으로 캐릭터에게 말을 시킨다.
+
+```powershell
+$pet = "$env:APPDATA\deskpet\deskpet.ps1"
+& $pet say "점심 먹자" -Mood happy                      # 그냥 말 시키기 (normal | happy | alert | fail)
+& $pet run "mvn -q package" -Name 빌드                  # 끝나면 성공/실패 + 걸린 시간. 종료 코드는 그대로 돌려준다
+& $pet watch C:\tomcat\logs\catalina.out -Name 톰캣    # 기동 완료/실패 줄이 나오면 알려 주고 끝난다
+```
+
+- `watch` 기본값은 톰캣 · 스프링 부트 기동 메시지다. 다른 로그는 `-Ok 정규식` `-Fail 정규식` 으로 바꾼다
+- 실패(`fail`)면 말풍선이 빨갛고 캐릭터가 쓰러진다 (쓰러지는 동작이 있는 캐릭터)
+- `run` 의 명령은 따옴표로 한 덩어리로 넘긴다 (`-q` 같은 옵션을 PowerShell 이 가로채지 않게)
+
+## 커서 놀이
+
+- 가만히 있을 때 커서가 가까이 오면 그쪽을 쳐다본다 (늘 켜짐)
+- 메뉴 **커서** — 신경 안 쓰기 / **쫓아오기** (멀어지면 달려와서 옆에 선다, 동료는 조금 떨어져서) / **도망가기** (가까이 가면 달아난다, 벽에 몰리면 커서 밑으로 빠져나간다)
+- 드래그 · 메뉴 · 껴안기 · 대화 중엔 쉰다
 
 ## 애니메이션 활용
 
@@ -412,6 +440,7 @@ npx electron . --start=hug            # 껴안기 바로 보기 (짝이 없으�
 npx electron . --start=talk           # 둘의 대화 바로 보기
 npx electron . --start=nightmare      # 원작처럼 연출 바로 보기 (nightmare · down · bloodcast · teleport)
 npx electron . --start=claude:done    # Claude 반응 바로 보기 (done · fail · permission · waiting)
+npx electron . --start=cursor:chase   # 커서 놀이 바로 보기 (chase · flee, 저장 안 함)
 npx electron . --character=kaltsit    # 특정 캐릭터로 실행
 npx electron . --shot=out.png,5000    # 창 내용만 PNG로 저장하고 종료
 npx electron . --hitbox               # 클릭 판정 영역을 화면에 표시

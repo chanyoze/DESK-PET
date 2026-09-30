@@ -36,6 +36,12 @@ contextBridge.exposeInMainWorld('petAPI', {
   claudeDisconnect: () => ipcRenderer.invoke('claude:disconnect'),
   /** 연결은 둔 채 말만 끄고 켠다 */
   claudeSetSpeak: (v) => ipcRenderer.invoke('claude:setSpeak', v),
+  /** 세션 목록 [{ sid, project, state, sec, hasWindow }] — 최근 소식 순 */
+  claudeSessions: () => ipcRenderer.invoke('claude:sessions'),
+  /** 그 세션의 터미널 창을 앞으로 → { ok, reason? } */
+  claudeFocus: (sid) => ipcRenderer.invoke('claude:focus', sid),
+  /** 커서 놀이 'none' | 'chase' | 'flee' */
+  setCursorMode: (m) => ipcRenderer.invoke('settings:setCursorMode', m),
   /** { available, on } — 개발 실행에선 available=false */
   getAutoStart: () => ipcRenderer.invoke('autostart:get'),
   setAutoStart: (v) => ipcRenderer.invoke('autostart:set', v),

@@ -5,6 +5,7 @@ const { pathToFileURL } = require('url');
 const settings = require('./settings');
 const notify = require('./notify-server');
 const claudeHooks = require('./claude-hooks');
+const psScripts = require('./ps-scripts');
 
 const DEV = process.argv.includes('--dev');
 
@@ -310,6 +311,19 @@ function buildTrayMenu() {
         { label: '지금 마우스가 있는 모니터로', click: () => moveToDisplay(screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).id) },
       ]),
     },
+    {
+      // 좌클릭 메뉴와 같은 설정. 도망가기 중에 캐릭터를 못 잡아도 여기서 끌 수 있다
+      label: '커서',
+      submenu: [['none', '신경 안 쓰기'], ['chase', '쫓아오기'], ['flee', '도망가기']].map(([m, label]) => ({
+        label,
+        type: 'radio',
+        checked: (settings.load().cursorMode || 'none') === m,
+        click: () => {
+          settings.save({ cursorMode: m });
+          win?.webContents.send('pet:command', 'cursor:' + m);
+        },
+      })),
+    },
     { label: '가운데로 불러오기', click: () => win?.webContents.send('pet:command', 'recall') },
     { label: '깨우기', click: () => win?.webContents.send('pet:command', 'wake') },
     { label: '다음 캐릭터', click: () => win?.webContents.send('pet:command', 'next') },
@@ -369,51 +383,126 @@ function startReminderLoop() {
 }
 
 /**
- * Claude Code 훅 이벤트 → 펫 반응.
- * 훅이 넘긴 JSON 을 해석해서 렌더러에 { kind, project, sec } 로 보낸다. 대사는 렌더러가 고른다.
+ * Claude Code 훅 이벤트 → 세션 현황 + 펫 반응.
+ * 훅이 넘긴 JSON 을 해석해서 세션별 상태를 기억하고(메뉴의 세션 목록), 렌더러에
+ * { kind, sid, project, sec, busy } 로 보낸다. 대사는 렌더러가 고른다.
  *
+ *  SessionStart                → 세션 등록 (말 없음)
  *  UserPromptSubmit            → start       (일 시작 — 시각을 기억해 둔다)
  *  Stop                        → done        (CLAUDE_QUIET_SEC 보다 짧게 끝난 턴은 quick — 말 안 함)
  *  StopFailure                 → fail        (API 오류 등으로 끊김)
  *  Notification permission_prompt           → permission (허락 필요 — 커서 쪽으로 달려온다)
  *  Notification idle_prompt · agent_needs_input · elicitation_dialog → waiting
+ *  SessionEnd                  → 세션 목록에서 뺀다
  *
  * Stop 은 짧은 대답에도 매번 오므로, 사용자가 터미널을 보고 있을 법한 짧은 턴은 조용히 넘긴다.
+ *
+ * 터미널 창: 앱이 모르는 세션이면 응답에 needWindow 를 실어 보낸다 → 훅이 자기 조상 프로세스를
+ * 따라 올라가 창(Windows Terminal · VS Code · 콘솔)을 찾아 /claude-window 로 알려 준다.
+ * 세션마다 처음 한 번만이라 훅이 매번 느려지지 않는다.
  */
 const CLAUDE_QUIET_SEC = 20;
-const claudeTurns = new Map();     // session_id → 시작 시각(ms)
+/** @type {Map<string, {sid, project, cwd, state, at, turnStart, win}>} */
+const claudeSessions = new Map();
 const WAITING_TYPES = ['idle_prompt', 'agent_needs_input', 'elicitation_dialog', 'elicitation_url_dialog'];
 
-function onClaudeEvent(ev) {
+const busyCount = () => [...claudeSessions.values()].filter((s) => s.turnStart).length;
+
+function onClaudeEvent(ev, kind) {
+  const sid = String(ev.session_id || '');
+  if (kind === 'window') {
+    const s = claudeSessions.get(sid);
+    if (s && ev.hwnd) { s.win = { pid: ev.pid, hwnd: String(ev.hwnd), name: ev.name }; s.winTries = 0; }
+    console.log('[claude] 창 찾음:', s ? s.project : sid, ev.name, ev.hwnd);
+    return null;
+  }
+
   const name = ev.hook_event_name;
-  const sid = ev.session_id || '';
   const project = ev.cwd ? path.basename(String(ev.cwd)) : '';
   console.log('[claude]', name, ev.notification_type || '', project);
 
+  // 12시간 넘게 소식 없는 세션은 치운다 (SessionEnd 를 놓친 경우)
+  for (const [k, s] of claudeSessions) if (Date.now() - s.at > 12 * 3600e3) claudeSessions.delete(k);
+
+  if (name === 'SessionEnd') {
+    claudeSessions.delete(sid);
+    win?.webContents.send('pet:claude', { kind: 'end', sid, project, busy: busyCount(), quiet: true });
+    return null;
+  }
+
+  let s = claudeSessions.get(sid);
+  if (!s) {
+    s = { sid, project, cwd: ev.cwd || '', state: 'idle', at: Date.now(), turnStart: 0, win: null };
+    claudeSessions.set(sid, s);
+  }
+  s.at = Date.now();
+  if (project) s.project = project;
+
   let out = null;
   if (name === 'UserPromptSubmit') {
-    // 끝나지 않은 채 버려진 세션이 쌓이지 않게 하루 넘은 건 치운다
-    for (const [k, t] of claudeTurns) if (Date.now() - t > 864e5) claudeTurns.delete(k);
-    claudeTurns.set(sid, Date.now());
+    s.state = 'working';
+    s.turnStart = Date.now();
     out = { kind: 'start' };
   } else if (name === 'Stop') {
-    const t0 = claudeTurns.get(sid);
-    claudeTurns.delete(sid);
-    const sec = t0 ? Math.round((Date.now() - t0) / 1000) : null;
+    const sec = s.turnStart ? Math.round((Date.now() - s.turnStart) / 1000) : null;
+    s.state = 'done';
+    s.turnStart = 0;
     out = { kind: sec != null && sec < CLAUDE_QUIET_SEC ? 'quick' : 'done', sec };
   } else if (name === 'StopFailure') {
-    claudeTurns.delete(sid);
+    s.state = 'fail';
+    s.turnStart = 0;
     out = { kind: 'fail' };
   } else if (name === 'Notification') {
     const t = ev.notification_type || '';
     const msg = String(ev.message || '');
     // notification_type 이 없는 옛 버전은 메시지로 짐작한다
-    if (t === 'permission_prompt' || (!t && /permission/i.test(msg))) out = { kind: 'permission' };
-    else if (WAITING_TYPES.includes(t) || (!t && /waiting/i.test(msg))) out = { kind: 'waiting' };
+    if (t === 'permission_prompt' || (!t && /permission/i.test(msg))) { s.state = 'permission'; out = { kind: 'permission' }; }
+    else if (WAITING_TYPES.includes(t) || (!t && /waiting/i.test(msg))) { s.state = 'waiting'; out = { kind: 'waiting' }; }
   }
-  if (!out) return;
-  if (!settings.load().speakOnClaude && out.kind !== 'start') out.quiet = true;
-  win?.webContents.send('pet:claude', { ...out, project, busy: claudeTurns.size });
+  if (out) {
+    if (!settings.load().speakOnClaude && out.kind !== 'start') out.quiet = true;
+    win?.webContents.send('pet:claude', { ...out, sid, project: s.project, busy: busyCount() });
+  }
+  // 창을 아직 모르면 훅에게 찾아 달라고 한다
+  // 창 찾기는 0.6초쯤 걸려서, 못 찾는 환경이면 세션당 두 번까지만 부탁한다
+  if (s.win || s.winTries >= 2) return null;
+  s.winTries = (s.winTries || 0) + 1;
+  return { needWindow: sid };
+}
+
+/** 메뉴용 세션 목록 — 최근 소식 순 */
+function claudeSessionList() {
+  const now = Date.now();
+  return [...claudeSessions.values()]
+    .sort((a, b) => b.at - a.at)
+    .map((s) => ({
+      sid: s.sid, project: s.project, state: s.state, hasWindow: !!s.win,
+      sec: Math.round((now - (s.state === 'working' && s.turnStart ? s.turnStart : s.at)) / 1000),
+    }));
+}
+
+/**
+ * 세션의 터미널 창을 앞으로 가져온다. 창 핸들은 훅이 찾아 둔 것.
+ * 윈도우는 백그라운드 프로세스가 다른 창을 앞으로 올리는 걸 막아서, ALT 를 누른 채로
+ * SetForegroundWindow 를 부르는 흔한 우회를 쓴다 (userData 의 deskpet-focus.ps1).
+ */
+function focusClaudeSession(sid) {
+  const s = claudeSessions.get(sid);
+  if (!s || !s.win) return { ok: false, reason: 'nowindow' };
+  const script = path.join(app.getPath('userData'), 'deskpet-focus.ps1');
+  try {
+    fs.writeFileSync(script, psScripts.focusScript(), 'utf8');
+  } catch (e) {
+    return { ok: false, reason: e.message };
+  }
+  const { execFile } = require('child_process');
+  execFile('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script, '-Hwnd', s.win.hwnd],
+    { windowsHide: true, timeout: 8000 }, (err, stdout) => {
+      const r = String(stdout || '').trim();
+      console.log('[claude] 창 앞으로:', s.project, r || (err && err.message));
+      if (r === 'gone') s.win = null;       // 창이 닫혔으면 다음 훅 때 다시 찾는다
+    });
+  return { ok: true };
 }
 
 function claudeStatus() {
@@ -453,13 +542,27 @@ if (!app.requestSingleInstanceLock()) {
       win?.webContents.send('pet:say', msg);
     }, onClaudeEvent);
 
-    // 이미 연결돼 있으면 훅 스크립트를 이 버전 것으로 새로 쓴다 (포트 · 내용이 바뀌었을 수 있다)
+    // 이미 연결돼 있으면 이 버전에 맞춰 다시 건다 — 스크립트 내용 · 포트 · 거는 이벤트가 바뀌었을 수 있다.
+    // install 은 우리 훅만 걷어내고 다시 넣으므로 몇 번을 불러도 같다.
     if (fs.existsSync(claudeHookScript())) {
       try {
-        fs.writeFileSync(claudeHookScript(), claudeHooks.hookScript(cfg.notifyPort), 'utf8');
+        let st = claudeHooks.status({ scriptPath: claudeHookScript() });
+        if (st.connected && !st.legacy) {
+          fs.writeFileSync(claudeHookScript(), claudeHooks.hookScript(cfg.notifyPort), 'utf8');   // settings.json 은 그대로
+        } else if (!st.error) {
+          st = claudeHooks.install({ scriptPath: claudeHookScript(), port: cfg.notifyPort });   // 이벤트가 늘었으면 다시 건다
+        }
+        console.log('[claude] 훅:', st.connected ? '연결됨' : '확인 필요', st.error || '');
       } catch (e) {
-        console.error('[claude] 훅 스크립트 갱신 실패:', e.message);
+        console.error('[claude] 훅 갱신 실패:', e.message);
       }
+    }
+
+    // 명령줄 도구 (빌드 · 서버 기동 알림) — 설치 위치가 늘 같도록 userData 에 둔다
+    try {
+      fs.writeFileSync(path.join(app.getPath('userData'), 'deskpet.ps1'), psScripts.cliScript(cfg.notifyPort), 'utf8');
+    } catch (e) {
+      console.error('[cli] deskpet.ps1 쓰기 실패:', e.message);
     }
 
     startReminderLoop();
@@ -535,6 +638,10 @@ ipcMain.handle('claude:setSpeak', (_e, v) => {
   settings.save({ speakOnClaude: !!v });
   return claudeStatus();
 });
+ipcMain.handle('claude:sessions', () => claudeSessionList());
+ipcMain.handle('claude:focus', (_e, sid) => focusClaudeSession(sid));
+ipcMain.handle('settings:setCursorMode', (_e, m) =>
+  settings.save({ cursorMode: ['chase', 'flee'].includes(m) ? m : 'none' }));
 ipcMain.handle('autostart:get', () => autoStartStatus());
 ipcMain.handle('autostart:set', (_e, on) => {
   if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: !!on, path: loginExe() });

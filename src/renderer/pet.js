@@ -76,6 +76,8 @@
   let displays = [];      // 모니터 목록 (메뉴 열 때 갱신)
   let claudeState = null; // Claude Code 훅 연결 상태 (메뉴 열 때 갱신)
   let autoStart = null;   // 윈도우 시작 시 실행 { available, on }
+  let claudeSessions = []; // Claude 세션 현황 (메뉴 열 때 갱신)
+  let sizeScale = 1;      // 크기 배율 (메뉴 체크 표시용 — 바꾸면 창이 새로 뜬다)
   let spineLoaded = false;
 
   /** @type {Pet[]} 0 = 주인공, 1 = 동료 */
@@ -239,8 +241,10 @@
         this.sleepCooldown = 6;                  // 깨면 당분간 다시 안 잔다
         return this.setState('idle', rand(2, 4));
       }
-      // Claude 가 일하는 동안 주인공은 자리를 덜 뜨고 앉아서 기다린다 (잠들지는 않는다)
+      // Claude 가 일하는 동안 주인공은 자리를 덜 뜨고 앉아서 기다린다.
+      // 3분이 넘어가면 앉은 채로 꾸벅꾸벅 졸기도 한다 — 끝나면 깨서 알려 준다 (claude.on)
       if (this.role === 'main' && claude.working()) {
+        if (S.state === 'sit' && claude.workedSec() > 180 && r < 0.4) return this.setState('sleep', rand(10, 20));
         if (r < 0.45) return this.setState('sit', rand(5, 10));
         if (r < 0.75) return this.setState(Math.random() < 0.5 ? 'idle' : 'idle2', rand(2, 4));
         S.dir = Math.random() < 0.5 ? -1 : 1;
@@ -328,7 +332,9 @@
         S.until -= dt;
         if (Math.abs(dx) < this.halfWidth() * 0.6 || S.until <= 0) {
           S.facing = S.dir;
-          this.setState('pet', 2.2);
+          this.rushWhy = '';
+          if (this.rushEnd === 'idle') this.setState('idle', rand(1, 2));
+          else this.setState('pet', 2.2);
         }
       }
 
@@ -416,9 +422,33 @@
       this.bubble.say(msg);
       if (!this.view || msg.quiet) return;
       if (hug.busy(this)) return;       // 껴안는 중엔 말만 한다
+      if (msg.mood === 'fail') return this.collapse();
       // 기분에 맞는 동작으로 반응 (있는 것만)
       const wanted = msg.mood === 'happy' && this.view.has(this.animFor('special')) ? 'special' : 'pet';
       if (this.S.state !== 'drag' && this.S.state !== 'fall') this.setState(wanted, 2.2);
+    }
+
+    /** 실패 소식 — 쓰러지는 동작이 있으면 쓰러졌다 일어나고, 없으면 평범하게 반응 */
+    collapse() {
+      if (hug.busy(this)) hug.cancel();
+      const grounded = this.S.y >= stage.ground - 0.5;
+      if (this.has('down') && grounded) this.setState('down', 3);
+      else if (this.S.state !== 'drag' && this.S.state !== 'fall') this.setState('pet', 2.2);
+    }
+
+    /**
+     * x 까지 달려간다. 닿거나 timeout 초가 지나면 end 상태로 (Claude 허락 요청 · 커서 쫓기 · 도망).
+     * why 는 커서 놀이가 목표를 계속 고쳐 잡을지 판단할 때 쓴다.
+     */
+    rushTo(x, end, timeout, why) {
+      const S = this.S;
+      if (['drag', 'fall', 'climb', 'vanish', 'hugged'].indexOf(S.state) >= 0) return false;
+      if (hug.busy(this)) hug.cancel();
+      this.goalX = clamp(x, stage.workLeft + this.halfWidth(), stage.workRight - this.halfWidth());
+      this.rushEnd = end || 'pet';
+      this.rushWhy = why || '';
+      this.setState('rush', timeout || 8);
+      return true;
     }
 
     setMode(m) {
@@ -719,20 +749,32 @@
   //  Claude Code 연동
   // ════════════════════════════════════════════════════════════
   /**
-   * 메인이 훅 이벤트를 해석해서 { kind, project, sec, busy } 로 보낸다 (main.js onClaudeEvent).
-   * 말은 주인공이 한다. 앞에 [프로젝트 폴더 이름] 을 붙여서 세션이 여럿이어도 구분되게 한다.
+   * 메인이 훅 이벤트를 해석해서 { kind, sid, project, sec, busy } 로 보낸다 (main.js onClaudeEvent).
+   * 말은 주인공이 한다. 앞에 [프로젝트 폴더 이름] 을 붙여서 세션이 여럿이어도 구분되게 하고,
+   * 말풍선을 누르면 그 세션의 터미널 창으로 간다.
    *
    * 대사는 매니페스트의 claude 로 캐릭터마다 덮어쓸 수 있다:
-   *   "claude": { "done": [...], "long": [...], "fail": [...], "permission": [...], "waiting": [...] }
-   * long 은 5분 넘게 걸린 작업 — {m} 이 걸린 분으로 바뀐다.
+   *   "claude": { "done": [...], "long": [...], "sleepy": [...], "fail": [...], "permission": [...],
+   *               "waiting": [...], "noWindow": [...] }
+   * long 은 5분 넘게 걸린 작업 — {m} 이 걸린 분으로 바뀐다. sleepy 는 기다리다 졸던 중에 끝났을 때.
    */
   const CLAUDE_LINES = {
     done: ['끝났어. 확인해 봐', '다 됐어!', '작업 끝났어'],
     long: ['{m}분 걸렸는데, 끝났어', '오래 걸렸다… 끝났어 ({m}분)'],
+    sleepy: ['음냐… 어? 끝났대!', '안 잤어! …끝났대'],
     fail: ['멈췄어… 오류가 났나 봐', '중간에 끊겼어. 한번 봐 줘'],
     permission: ['허락이 필요하대', '이거 해도 되냐고 물어봐'],
     waiting: ['네 대답 기다리고 있어', '할 거 다 하고 기다리는 중이야'],
+    noWindow: ['그 창은 못 찾겠어…', '어느 창인지 모르겠어'],
   };
+
+  /** 메뉴 세션 목록에 쓰는 상태 이름 */
+  const SESSION_LABEL = {
+    working: '작업 중', permission: '허락 기다림', waiting: '대답 기다림',
+    done: '끝남', fail: '오류로 멈춤', idle: '대기',
+  };
+
+  const fmtAgo = (sec) => (sec < 60 ? sec + '초' : sec < 3600 ? Math.round(sec / 60) + '분' : Math.round(sec / 3600) + '시간');
 
   const claude = {
     busy: 0,              // 일하는 중인 세션 수 (메인이 세어서 보내 준다)
@@ -741,6 +783,9 @@
     /** 일하는 중인지 — 끝 신호를 놓쳐도 20분 지나면 풀린다 */
     working() {
       return this.busy > 0 && performance.now() - this.busySince < 20 * 60e3;
+    },
+    workedSec() {
+      return this.working() ? (performance.now() - this.busySince) / 1000 : 0;
     },
 
     line(p, kind, vars) {
@@ -755,36 +800,100 @@
       if (ev.kind === 'start' && !this.busy) this.busySince = performance.now();
       this.busy = ev.busy || 0;
       const p = pets[0];
-      if (!p || !p.view || ev.quiet || ev.kind === 'start' || ev.kind === 'quick') return;
+      if (!p || !p.view || ev.quiet || ev.kind === 'start' || ev.kind === 'quick' || ev.kind === 'end') return;
       console.log('[claude] 반응:', ev.kind, ev.project || '', ev.sec != null ? ev.sec + 's' : '');
 
       const tag = ev.project ? '[' + ev.project + '] ' : '';
+      const sid = ev.sid || '';
       if (ev.kind === 'done') {
-        const long = ev.sec >= 300;
-        const text = this.line(p, long ? 'long' : 'done', { m: Math.round(ev.sec / 60) });
-        p.say({ text: tag + text, mood: 'happy', ms: 7000 });
+        const dozing = p.S.state === 'sleep';
+        const kind = dozing ? 'sleepy' : ev.sec >= 300 ? 'long' : 'done';
+        const text = this.line(p, kind, { m: Math.round(ev.sec / 60) });
+        p.say({ text: tag + text, mood: 'happy', ms: 7000, sid });   // 자고 있었으면 깨면서 반응한다
       } else if (ev.kind === 'fail') {
-        p.say({ text: tag + this.line(p, 'fail'), mood: 'alert', ms: 8000, quiet: true });
-        if (hug.busy(p)) hug.cancel();
-        // 쓰러지는 동작이 있으면 쓰러졌다 일어난다, 없으면 평범하게 반응
-        if (p.has('down') && p.S.y >= stage.ground - 0.5) p.setState('down', 3);
-        else p.setState('pet', 2.2);
+        p.say({ text: tag + this.line(p, 'fail'), mood: 'fail', ms: 8000, sid });
       } else if (ev.kind === 'permission') {
-        p.say({ text: tag + this.line(p, 'permission'), mood: 'alert', ms: 9000, quiet: true });
-        this.rushToCursor(p);
+        p.say({ text: tag + this.line(p, 'permission'), mood: 'alert', ms: 9000, quiet: true, sid });
+        // 커서 아래쪽 바닥으로 달려온다. 커서가 다른 모니터에 있으면 그쪽 끝까지 (8초 안에 못 닿으면 거기서 멈춤)
+        if (cursor.seen) p.rushTo(cursor.x, 'pet', 8);
+        else if (p.S.state !== 'drag' && p.S.state !== 'fall') p.setState('pet', 2.2);
       } else if (ev.kind === 'waiting') {
-        p.say({ text: tag + this.line(p, 'waiting'), ms: 7000 });
+        p.say({ text: tag + this.line(p, 'waiting'), ms: 7000, sid });
       }
     },
 
-    /** 커서 아래쪽 바닥으로 달려온다. 커서가 다른 모니터에 있으면 그쪽 끝까지 */
-    rushToCursor(p) {
-      const S = p.S;
-      if (['drag', 'fall', 'climb', 'vanish', 'hugged'].indexOf(S.state) >= 0) return;
-      if (hug.busy(p)) hug.cancel();
-      if (cursor.x < 0) return p.setState('pet', 2.2);
-      p.goalX = clamp(cursor.x, stage.workLeft + p.halfWidth(), stage.workRight - p.halfWidth());
-      p.setState('rush', 8);          // 8초 안에 못 닿으면 그 자리에서 멈춘다
+    /** 세션의 터미널 창으로 (말풍선 · 메뉴에서) */
+    async focus(sid, p) {
+      const r = await window.petAPI.claudeFocus(sid);
+      if (!r.ok && p) p.say({ text: this.line(p, 'noWindow'), ms: 2600, quiet: true });
+    },
+
+    /** 메뉴 항목 — 세션 목록 */
+    menuItems(list) {
+      return list.slice(0, 6).map((s) => ({
+        label: (s.hasWindow ? '↗ ' : '') + (s.project || '(이름 없음)') + ' · ' + (SESSION_LABEL[s.state] || s.state) +
+          ' ' + fmtAgo(s.sec) + (s.state === 'working' ? '째' : ' 전'),
+        value: 'csess:' + s.sid,
+      }));
+    },
+  };
+
+  // ════════════════════════════════════════════════════════════
+  //  커서 놀이 — 쳐다보기 · 쫓아오기 · 도망가기
+  // ════════════════════════════════════════════════════════════
+  /**
+   * 쳐다보기는 늘 켜져 있다: 가만히 있을 때 커서가 가까우면 그쪽을 본다.
+   * 쫓아오기 / 도망가기는 메뉴에서 고른다 (설정 cursorMode).
+   *  - 쫓아오기: 커서가 멀어지면 달려와서 옆에 선다. 동료는 조금 더 떨어져서 선다
+   *  - 도망가기: 커서가 가까이 오면 반대쪽으로 달아난다. 벽에 몰리면 커서 밑을 지나 반대편으로 빠져나간다
+   * 0.25초마다 판단한다. 드래그 · 메뉴 · 껴안기 · 대화 중엔 쉰다.
+   */
+  const CALM_FOR_CURSOR = ['idle', 'idle2', 'walk', 'run', 'sit'];
+  const cursorPlay = {
+    mode: 'none',
+    t: 0,
+
+    tick(dt) {
+      this.t -= dt;
+      if (this.t > 0) return;
+      this.t = 0.25;
+      // 0.25초 동안 커서가 움직인 거리 (도망가기 판단용)
+      this.speed = this.last ? Math.hypot(cursor.x - this.last.x, cursor.y - this.last.y) : 0;
+      this.last = { x: cursor.x, y: cursor.y };
+      if (drag || !cursor.seen || (menu && menu.open) || hug.phase || talk.active) return;
+      const onStage = cursor.x >= 0 && cursor.x <= stage.width && cursor.y >= 0 && cursor.y <= stage.height;
+
+      for (const p of pets) {
+        if (p.hidden || !p.view) continue;
+        const S = p.S;
+        const grounded = S.vy === 0 && S.y >= stage.ground - 0.5;
+        if (!grounded) continue;
+        const dx = cursor.x - S.x;
+        const near = Math.abs(dx) < p.halfWidth() * 3 + 60 && Math.abs(cursor.y - (S.y - p.height / 2)) < p.height * 1.6;
+
+        if (this.mode === 'chase' && onStage) {
+          const gap = p.role === 'main' ? p.halfWidth() * 1.6 : p.halfWidth() * 4;   // 커서 옆 어디에 설지
+          const target = cursor.x - Math.sign(dx || 1) * gap;
+          if (S.state === 'rush' && p.rushWhy === 'chase') { p.goalX = clamp(target, stage.workLeft + p.halfWidth(), stage.workRight - p.halfWidth()); continue; }
+          if (CALM_FOR_CURSOR.indexOf(S.state) >= 0 && Math.abs(dx) > gap + p.halfWidth() * 3) {
+            p.rushTo(target, 'idle', 6, 'chase');
+            continue;
+          }
+        }
+        // 빠르게 다가올 때만 도망간다 — 천천히 다가가면 잡을 수 있어야 메뉴를 열어 모드를 끌 수 있다
+        if (this.mode === 'flee' && onStage && near && this.speed > 40 && CALM_FOR_CURSOR.indexOf(S.state) >= 0) {
+          const dir = -Math.sign(dx || 1);
+          let goal = clamp(S.x + dir * 380, stage.workLeft + p.halfWidth(), stage.workRight - p.halfWidth());
+          // 벽에 몰렸으면 커서 밑으로 빠져나가 반대편으로
+          if (Math.abs(goal - S.x) < 80) goal = S.x - dir * 520;
+          p.rushTo(goal, 'idle', 3, 'flee');
+          continue;
+        }
+        // 쳐다보기 — 가만히 있을 때만, 너무 가까우면(바로 위) 그대로
+        if (['idle', 'idle2', 'sit'].indexOf(S.state) >= 0 && onStage && Math.abs(dx) < 420 && Math.abs(dx) > p.halfWidth() * 0.5) {
+          S.facing = dx > 0 ? 1 : -1;
+        }
+      }
     },
   };
 
@@ -800,12 +909,14 @@
 
     sections.push({
       title: pets.length > 1 ? '캐릭터 (이 아이)' : '캐릭터',
+      fold: 'char',
       items: roster.map((c) => ({ label: c.name, value: 'char:' + c.id, checked: c.id === p.id })),
     });
 
     // 함께 다니기 — 주인공 말고 한 명 더
     sections.push({
       title: '함께 다니기',
+      fold: 'comp',
       items: [{ label: '혼자', value: 'comp:', checked: !comp }].concat(
         roster.filter((c) => c.id !== main.id)
           .map((c) => ({ label: c.name, value: 'comp:' + c.id, checked: !!comp && comp.id === c.id }))),
@@ -815,6 +926,7 @@
     if (displays.length > 1) {
       sections.push({
         title: '모니터',
+        fold: 'disp',
         items: displays.map((d) => ({ label: d.label, value: 'disp:' + d.id, checked: d.current }))
           .concat([{ label: '지금 마우스가 있는 모니터로', value: 'disp:cursor' }]),
       });
@@ -822,10 +934,11 @@
 
     sections.push({
       title: '크기',
+      fold: 'size',
       items: [
-        { label: '작게', value: 'size:0.6' },
-        { label: '보통', value: 'size:1' },
-        { label: '크게', value: 'size:1.45' },
+        { label: '작게', value: 'size:0.6', checked: sizeScale === 0.6 },
+        { label: '보통', value: 'size:1', checked: sizeScale === 1 },
+        { label: '크게', value: 'size:1.45', checked: sizeScale === 1.45 },
       ],
     });
 
@@ -841,6 +954,7 @@
     if (pets.some((q) => q.character && (q.character.linesDark || q.character.dialoguesDark))) {
       sections.push({
         title: '분위기',
+        fold: 'tone',
         items: [
           { label: '가볍게', value: 'tone:light', checked: tone !== 'dark' },
           { label: '원작처럼', value: 'tone:dark', checked: tone === 'dark' },
@@ -852,6 +966,7 @@
     if (modes.length) {
       sections.push({
         title: '무장',
+        fold: 'mode',
         items: [{ label: '맨손', value: 'mode:', checked: !p.mode }]
           .concat(modes.map((m) => ({ label: MODE_LABEL[m] || m, value: 'mode:' + m, checked: p.mode === m }))),
       });
@@ -870,7 +985,21 @@
     } else {
       cItems.push({ label: cs.legacy ? '알림 연결하기 (예전 훅 바꾸기)' : '알림 연결하기', value: 'claude:on' });
     }
-    sections.push({ title: 'Claude Code' + (cs.connected ? ' · 연결됨' : ''), items: cItems });
+    sections.push({ title: 'Claude Code' + (cs.connected ? ' · 연결됨' : ''), fold: cs.connected ? 'claude' : '', items: cItems });
+    // 세션 현황 — 누르면 그 터미널 창으로 (↗ 는 창을 찾아 둔 세션)
+    if (cs.connected && claudeSessions.length) {
+      sections.push({ title: 'Claude 세션 (눌러서 그 창으로)', items: claude.menuItems(claudeSessions) });
+    }
+
+    sections.push({
+      title: '커서',
+      fold: 'cursor',
+      items: [
+        { label: '신경 안 쓰기', value: 'cursor:none', checked: cursorPlay.mode === 'none' },
+        { label: '쫓아오기', value: 'cursor:chase', checked: cursorPlay.mode === 'chase' },
+        { label: '도망가기', value: 'cursor:flee', checked: cursorPlay.mode === 'flee' },
+      ],
+    });
 
     if (autoStart && autoStart.available) {
       sections.push({ items: [{ label: '윈도우 시작할 때 실행', value: 'auto:toggle', checked: autoStart.on }] });
@@ -878,6 +1007,7 @@
 
     sections.push({
       title: '리마인더',
+      fold: 'remind',
       items: [
         { label: '5분 뒤 알림', value: 'remind:5' },
         { label: '25분 뒤 알림 (포모도로)', value: 'remind:25' },
@@ -935,6 +1065,13 @@
         claudeState = await window.petAPI.claudeSetSpeak(!claudeState.speak);
         p.say({ text: claudeState.speak ? 'Claude 소식 다시 전할게' : 'Claude 소식은 잠깐 조용히 있을게', ms: 2600 });
       }
+    } else if (kind === 'csess') {
+      claude.focus(arg, p);
+    } else if (kind === 'cursor') {
+      cursorPlay.mode = arg;
+      window.petAPI.setCursorMode(arg);
+      const said = { none: '이제 커서는 신경 안 쓸게', chase: '어디 가? 같이 가!', flee: '가까이 오지 마!' };
+      p.say({ text: said[arg] || '', ms: 2200, quiet: true });
     } else if (kind === 'auto') {
       autoStart = await window.petAPI.setAutoStart(!autoStart.on);
       p.say({ text: autoStart.on ? '컴퓨터 켜면 나도 나올게' : '이제 알아서 안 나올게', ms: 2600 });
@@ -1026,7 +1163,8 @@
   // ════════════════════════════════════════════════════════════
   let hover = false;
   let drag = null;        // { pet, ... }
-  const cursor = { x: -1, y: -1 };
+  // seen: 좌표를 한 번이라도 받았는지 (왼쪽 모니터에 있으면 x 가 음수라서 -1 로는 구분이 안 된다)
+  const cursor = { x: -1, y: -1, seen: false };
 
   const inRect = (r, px, py) =>
     !!r && px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
@@ -1051,7 +1189,10 @@
    */
   function hitTest(px, py) {
     if (!pets.length) return false;
-    if (menu && inRect(menu.rect, px, py)) return true;
+    // 메뉴가 열려 있으면 화면 전체가 클릭을 받는다 — 빈 곳을 누르면 메뉴가 닫힌다 (PetMenu 의 mousedown).
+    // 클릭 통과 상태로 두면 바탕화면 클릭이 앱까지 오지 않아서 메뉴를 닫을 방법이 없다.
+    // 윈도우 팝업 메뉴처럼 그 클릭 한 번은 메뉴를 닫는 데 쓰이고 아래 창으로 가지 않는다.
+    if (menu && menu.open) return true;
     if (bubbleAt(px, py)) return true;
     return !!petAt(px, py);
   }
@@ -1061,20 +1202,38 @@
     if (want !== hover || force) {
       hover = want;
       window.petAPI.setInteractive(want);
-      document.body.style.cursor = want ? 'grab' : 'default';
     }
+    // 잡는 손 모양은 캐릭터 위에서만 (메뉴가 열려 화면 전체가 클릭을 받을 때도 빈 곳은 보통 커서)
+    const grab = drag || (want && !!petAt(cursor.x, cursor.y));
+    document.body.style.cursor = drag ? 'grabbing' : grab ? 'grab' : 'default';
+  }
+
+  /**
+   * 메뉴가 열린 채 커서가 이 모니터를 떠나면 닫는다 — 다른 모니터 클릭은 이 창에 안 와서 닫을 수가 없다.
+   * 잠깐 스쳐 나간 건 봐준다 (1초).
+   */
+  let offScreenSince = 0;
+  function closeMenuIfCursorLeft() {
+    if (!menu || !menu.open) { offScreenSince = 0; return; }
+    const off = cursor.x < 0 || cursor.y < 0 || cursor.x > stage.width || cursor.y > stage.height;
+    if (!off) { offScreenSince = 0; return; }
+    if (!offScreenSince) offScreenSince = performance.now();
+    else if (performance.now() - offScreenSince > 1000) { menu.close(); offScreenSince = 0; }
   }
 
   // 메인이 알려 주는 커서 좌표 — forward mousemove 가 끊겨도 클릭 전환이 되게 한다
   window.petAPI.onCursor((p) => {
     if (drag) return;              // 드래그 중엔 실제 mousemove 가 더 정확하다
     cursor.x = p.x;
+    cursor.seen = true;
     cursor.y = p.y;
     syncInteractive(false);
+    closeMenuIfCursorLeft();
   });
 
   window.addEventListener('mousemove', (e) => {
     cursor.x = e.clientX;
+    cursor.seen = true;
     cursor.y = e.clientY;
 
     if (drag) {
@@ -1101,7 +1260,10 @@
     if (menu && inRect(menu.rect, e.clientX, e.clientY)) return;
     const bp = bubbleAt(e.clientX, e.clientY);
     if (bp) {
+      // Claude 세션 말풍선이면 그 터미널로 간다
+      const sid = bp.bubble.current && bp.bubble.current.sid;
       bp.bubble.dismiss();
+      if (sid) claude.focus(sid, bp);
       return;
     }
     const p = petAt(e.clientX, e.clientY);
@@ -1137,12 +1299,13 @@
       // 열 때마다 목록을 다시 읽는다 — 실행 중에 넣은 캐릭터도 바로 보이게
       Promise.all([
         window.petAPI.listCharacters(), window.petAPI.listDisplays(),
-        window.petAPI.claudeStatus(), window.petAPI.getAutoStart(),
-      ]).then(([list, ds, cs, as]) => {
+        window.petAPI.claudeStatus(), window.petAPI.getAutoStart(), window.petAPI.claudeSessions(),
+      ]).then(([list, ds, cs, as, ss]) => {
         roster = list;
         displays = ds;
         claudeState = cs;       // settings.json 을 손으로 고쳤을 수도 있어서 열 때마다 읽는다
         autoStart = as;
+        claudeSessions = ss;
         buildMenu(p);
         menu.show(S.x, S.y - p.height * 0.55, stage);
         syncInteractive(true);
@@ -1176,6 +1339,7 @@
     try {
       for (const p of pets) p.update(dt);
       hug.tick(dt);
+      cursorPlay.tick(dt);
       talk.tick(dt);
       dark.tick(dt);
       for (const p of pets) p.render(dt);
@@ -1183,6 +1347,7 @@
       // 그동안 클릭이 바탕화면으로 새어 나간다 (크게 설정일수록 빨라서 더 잘 생긴다).
       // 값이 바뀔 때만 IPC를 보내므로 매 프레임 불러도 된다.
       if (!drag && cursor.x >= 0) syncInteractive(false);
+      closeMenuIfCursorLeft();      // 커서가 멈춰 있으면 좌표가 안 오므로 여기서도 본다
       if (hitboxEl && pets[0] && pets[0].view) {
         const b = pets[0].hitBox();
         hitboxEl.style.transform = `translate3d(${b.x}px,${b.y}px,0)`;
@@ -1223,8 +1388,10 @@
     const cfg = await window.petAPI.getSettings();
     reminders = cfg.reminders || [];
     chatOn = cfg.chatter !== false;
+    sizeScale = cfg.sizeScale || 1;
     modeByChar = cfg.modes || {};
     tone = cfg.tone === 'dark' ? 'dark' : 'light';
+    cursorPlay.mode = cfg.cursorMode || 'none';
 
     stage = await window.petAPI.getStage();
     roster = await window.petAPI.listCharacters();
@@ -1317,6 +1484,9 @@
       placeOnGround(p);
       p.setState('idle', 2);
       claude.on({ kind: cmd.slice(7), project: 'test', sec: 42, busy: 0 });
+    } else if (cmd.indexOf('cursor:') === 0) {
+      // 커서 놀이 바로 보기 (--start=cursor:chase | flee) — 저장하지 않는다
+      cursorPlay.mode = cmd.slice(7);
     } else if (cmd === 'recall') {
       pets.forEach((q, i) => q.drop((stage.workLeft + stage.workRight) / 2 + i * 180));
     } else if (cmd === 'next') {
@@ -1335,7 +1505,7 @@
 
   // 디버깅용
   window.__pets = pets;
-  window.__debug = { hug, talk, dark, claude, setCompanion };   // 녹화 · 테스트 스크립트용
+  window.__debug = { hug, talk, dark, claude, cursorPlay, cursor, setCompanion };   // 녹화 · 테스트 스크립트용
   if (location.search.indexOf('trace') >= 0) {
     setInterval(() => {
       for (const p of pets) {

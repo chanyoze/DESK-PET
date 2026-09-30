@@ -50,6 +50,18 @@ body {
   border-color: rgba(56, 161, 105, 0.42);
 }
 
+/* 빌드 실패 · Claude 오류 */
+.bubble[data-mood='fail'] {
+  background: rgba(254, 238, 238, 0.98);
+  border-color: rgba(197, 48, 48, 0.5);
+}
+
+/* 누르면 그 터미널로 간다 (Claude 세션 말풍선) */
+.bubble[data-link='1'] {
+  text-decoration: underline dotted rgba(40, 50, 80, 0.35);
+  text-underline-offset: 3px;
+}
+
 @keyframes pop {
   from { opacity: 0; transform: translateY(6px) scale(0.96); }
   to   { opacity: 1; }
@@ -77,6 +89,31 @@ body {
   font-size: 10.5px;
   letter-spacing: 0.04em;
   color: #8f9bb3;
+}
+
+/* 접는 섹션 제목 — 누르면 펼친다 */
+.menu-fold {
+  display: block;
+  width: 100%;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  font: inherit;
+  font-size: 11.5px;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.menu-fold:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: #c3cce0;
+}
+
+.menu-fold.open {
+  color: #c3cce0;
 }
 
 .menu-item {

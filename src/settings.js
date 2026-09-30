@@ -17,6 +17,7 @@ const DEFAULTS = {
   reminders: [],       // { id, text, at: "HH:MM" | epoch ms, repeat: "daily"|null, done }
   notifyPort: 45678,
   speakOnClaude: true,
+  cursorMode: 'none',  // 커서 놀이: none / chase 쫓아오기 / flee 도망가기
 };
 
 /**
