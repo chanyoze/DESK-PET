@@ -370,7 +370,11 @@ node tools/pmd-import.js tools/recipes/pokemon/herdier.json      # 하데리어 
 
 ## 업데이트 — 버전 올려 푸시하면 쓰는 사람에게 알림
 
-**배포하는 쪽** — `package.json` 의 `version` 을 올려 main 에 푸시하면 끝이다 (`.github/workflows/release.yml`).
+**배포하는 쪽** — ① `src/whatsnew.json` 에 새 버전 요약을 몇 줄 적고 ② `package.json` 의 `version` 을 올려
+main 에 푸시하면 끝이다 (`.github/workflows/release.yml`).
+
+- `whatsnew.json` 의 요약은 세 군데에 같은 말로 나간다 — 릴리스 노트 맨 위 · 앱의 업데이트 확인 창 ·
+  **업데이트 뒤 처음 켤 때 뜨는 "새로 바뀐 것" 창**. 커밋 제목이 아니라 쓰는 사람 말로 짧게
 
 | | 만들어지는 것 | 릴리스 |
 |---|---|---|
@@ -387,7 +391,9 @@ node tools/pmd-import.js tools/recipes/pokemon/herdier.json      # 하데리어 
    - 윈도우 포터블: 새 exe 를 옛 exe 옆에 받고, 옛 앱이 꺼진 뒤 새 exe 가 뜨고, 옛 exe 는 지워진다.
      자동 시작이 켜져 있었으면 새 경로로 옮겨 건다
    - 맥: zip 을 풀어 지금 `.app` 자리에 바꿔 넣고 다시 연다 (못 바꾸는 자리면 Finder 로 새 앱을 보여 준다)
-4. 새 앱이 "v0.15.0 → v0.16.0 업데이트했어" 라고 알려 준다
+4. 새 앱이 "v0.15.0 → v0.16.0 업데이트했어" 라고 알려 주고, **"새로 바뀐 것" 창**에 그 사이 버전들의 요약을 보여 준다
+   - 손으로 exe 를 바꿔 끼워도 같다 — 지난번 실행 버전(설정 `lastVersion`)보다 올라갔으면 처음 켤 때 한 번.
+     처음 설치하면 띄우지 않는다. 메뉴 · 트레이 "새로 바뀐 것 보기" 로 다시 볼 수 있다
 
 - **캐릭터 · 설정 · 할 일은 그대로다** — 전부 `%APPDATA%\deskpet` (맥 `~/Library/Application Support/deskpet`) 에 있고 앱만 바뀐다.
   개인 빌드(그림 들어간 exe)에서 업데이트해도 공개판으로 바뀌지만 캐릭터는 그 폴더에서 계속 읽는다

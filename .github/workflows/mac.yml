@@ -71,9 +71,11 @@ jobs:
         run: |
           VER=$(node -p "require('./package.json').version")
           TAG="mac-v$VER"
+          # 맨 위는 src/whatsnew.json 의 이 버전 요약 (앱 업데이트 창에 보인다)
+          { node -e "const w=require('./src/whatsnew.json')[process.argv[1]]||[];if(w.length)console.log(w.map(t=>'• '+t).join('\n')+'\n')" "$VER";
+            echo "맥용 (애플 실리콘 · 인텔). 받은 뒤 응용 프로그램 폴더로 옮기고 터미널에서 한 번: xattr -cr /Applications/DeskPet.app — 캐릭터는 처음 켤 때 인터넷에서 받아 온다 (그림은 이 파일에 없음)."; } > notes.md
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" dist/mac/*.zip --clobber
           else
-            gh release create "$TAG" dist/mac/*.zip --prerelease --title "DeskPet for macOS $VER" \
-              --notes "맥용 (애플 실리콘 · 인텔). 받은 뒤 응용 프로그램 폴더로 옮기고 터미널에서 한 번: xattr -cr /Applications/DeskPet.app — 캐릭터는 처음 켤 때 인터넷에서 받아 온다 (그림은 이 파일에 없음)."
+            gh release create "$TAG" dist/mac/*.zip --prerelease --title "DeskPet for macOS $VER" --notes-file notes.md
           fi

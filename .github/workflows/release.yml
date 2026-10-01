@@ -59,10 +59,13 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
-      - name: 릴리스 노트 (지난 v 태그 이후 커밋 제목)
+      # 맨 위는 src/whatsnew.json 의 이 버전 요약 (앱의 업데이트 창 · 새로 바뀐 것 창과 같은 말), 아래는 커밋 제목
+      - name: 릴리스 노트
         run: |
+          VER="${{ needs.check.outputs.version }}"
           PREV=$(git describe --tags --match 'v*' --abbrev=0 2>/dev/null || true)
-          { echo "윈도우 포터블 exe — 받아서 바로 실행. 앱 안에서 업데이트하면 저절로 바뀐다 (캐릭터 · 설정 · 할 일은 그대로)."; echo; echo "바뀐 것:";
+          { node -e "const w=require('./src/whatsnew.json')[process.argv[1]]||[];if(w.length)console.log(w.map(t=>'• '+t).join('\n')+'\n')" "$VER";
+            echo "윈도우 포터블 exe — 받아서 바로 실행. 앱 안에서 업데이트하면 저절로 바뀐다 (캐릭터 · 설정 · 할 일은 그대로)."; echo; echo "커밋:";
             git log --no-merges --pretty='- %s' ${PREV:+$PREV..}HEAD | sed -E 's/^- [0-9-]+ \/ [^/]+ \/ (- \/ )?/- /' | head -40; } > notes.md
           cat notes.md
 
