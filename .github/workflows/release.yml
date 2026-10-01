@@ -24,12 +24,25 @@ jobs:
       mac: ${{ steps.v.outputs.mac }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - id: v
         env:
           GH_TOKEN: ${{ github.token }}
+          BEFORE: ${{ github.event.before }}
         run: |
           VER=$(node -p "require('./package.json').version")
           echo "version=$VER" >> "$GITHUB_OUTPUT"
+          # push 일 땐 "version" 값이 실제로 바뀐 경우만 — 다른 설정(electronLanguages 등)만 고친 커밋으로
+          # 릴리스가 나가면 안 된다 (2026-10-01 그렇게 시작된 실행을 취소한 적 있음). 손으로 돌리면(workflow_dispatch) 그대로 진행
+          if [ "${{ github.event_name }}" = "push" ] && [ -n "$BEFORE" ] && git cat-file -e "$BEFORE" 2>/dev/null; then
+            OLD=$(git show "$BEFORE:package.json" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).version))")
+            if [ "$OLD" = "$VER" ]; then
+              echo "버전 그대로($VER) — 릴리스 안 함"
+              echo "win=false" >> "$GITHUB_OUTPUT"; echo "mac=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
           if gh release view "v$VER" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then echo "win=false" >> "$GITHUB_OUTPUT"; else echo "win=true" >> "$GITHUB_OUTPUT"; fi
           if gh release view "mac-v$VER" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then echo "mac=false" >> "$GITHUB_OUTPUT"; else echo "mac=true" >> "$GITHUB_OUTPUT"; fi
           echo "버전 $VER — 윈도우 릴리스 필요: $(grep win= "$GITHUB_OUTPUT" | cut -d= -f2), 맥: $(grep mac= "$GITHUB_OUTPUT" | cut -d= -f2)"
