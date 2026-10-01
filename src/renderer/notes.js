@@ -124,23 +124,41 @@
     return view === 'backlog' ? { backlog: true } : { date: viewDate() };
   }
 
+  /**
+   * 항목 한 줄 — 체크박스 · 제목(+설명) · 날짜/기한 칩 · (마우스 올리면) ✎ 수정 · × 지우기(두 번 눌러야)
+   * 체크는 체크박스로만 (글을 눌러 실수로 체크되지 않게). 글을 더블클릭해도 수정.
+   */
   function itemRow(it, extraTag) {
-    const row = document.createElement('label');
+    const row = document.createElement('div');
     row.className = 'todo-item' + (it.done ? ' done' : '');
     const cb = document.createElement('input');
     cb.type = 'checkbox';
     cb.checked = it.done;
     cb.addEventListener('change', () => api().todoToggle(it.i, it.text).then(setTodo));
-    const tx = document.createElement('span');
-    tx.className = 'todo-text';
-    tx.textContent = it.text;
+    const main = document.createElement('div');
+    main.className = 'todo-text';
+    const title = document.createElement('div');
+    title.textContent = it.text;
+    main.appendChild(title);
+    if (it.detail) {
+      const d = document.createElement('div');
+      d.className = 'todo-detail';
+      d.textContent = it.detail;
+      main.appendChild(d);
+    }
+    main.title = '더블클릭해서 수정';
+    main.addEventListener('dblclick', () => api().todoEdit(it.i, it.text).then(setTodo));
     row.appendChild(cb);
-    row.appendChild(tx);
+    row.appendChild(main);
+    // 제목 아래 한 줄 — 날짜 · 기한 칩, 마우스를 올리면 수정 · 지우기 (제목이 좁아지지 않게 아래로)
+    const meta = document.createElement('div');
+    meta.className = 'todo-meta';
+    main.appendChild(meta);
     if (extraTag) {
       const t = document.createElement('span');
       t.className = 'chip-date';
       t.textContent = extraTag;
-      row.appendChild(t);
+      meta.appendChild(t);
     }
     if (it.due) {
       const c = document.createElement('span');
@@ -150,8 +168,26 @@
       const [d, t] = it.due.split(' ');
       c.textContent = '~' + (d === it.date && t ? t : parseInt(d.slice(5, 7), 10) + '/' + parseInt(d.slice(8), 10) + (t ? ' ' + t : ''));
       c.title = '기한 ' + it.due;
-      row.appendChild(c);
+      meta.appendChild(c);
     }
+    const acts = document.createElement('span');
+    acts.className = 'todo-acts';
+    acts.appendChild(button('✎', '수정', () => api().todoEdit(it.i, it.text).then(setTodo)));
+    acts.appendChild(button('×', '지우기 (한 번 더 누르면 지운다)', (b) => {
+      if (b.dataset.armed) { api().todoRemove(it.i, it.text).then(setTodo); return; }
+      b.dataset.armed = '1';
+      b.textContent = '지울까?';
+      b.classList.add('armed');
+      row.classList.add('arming');
+      setTimeout(() => {
+        if (!b.isConnected) return;
+        delete b.dataset.armed;
+        b.textContent = '×';
+        b.classList.remove('armed');
+        row.classList.remove('arming');
+      }, 3000);
+    }));
+    meta.appendChild(acts);
     return row;
   }
 

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, screen, ipcMain, Tray, Menu, nativeImage, shell, Notification } = require('electron');
+const { app, BrowserWindow, screen, ipcMain, Tray, Menu, nativeImage, shell, Notification, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { pathToFileURL } = require('url');
@@ -13,6 +13,7 @@ const claudeHooks = require('./claude-hooks');
 const psScripts = require('./ps-scripts');
 const notesStore = require('./notes-store');
 const editorWindow = require('./editor-window');
+const updater = require('./updater');
 
 const DEV = process.argv.includes('--dev');
 
@@ -343,6 +344,7 @@ function buildTrayMenu() {
     },
     { label: '할 일 추가…', click: () => win?.webContents.send('pet:command', 'todo:add') },
     { label: '지금 할 일 정리해줘', click: () => sendRecap('manual') },
+    { label: updateInfo ? '⬆ 업데이트 v' + updateInfo.version + '…' : '업데이트 확인 (지금 v' + app.getVersion() + ')', click: () => (updateInfo ? promptUpdate() : checkUpdate(true)) },
     // 화면 공유 · 회의 때 — 캐릭터를 못 잡아도 여기서 숨길 수 있게
     { label: '메모 · 할 일 카드 숨기기', type: 'checkbox', checked: !!settings.load().notesHidden, click: (it) => setNotesHidden(it.checked) },
     { label: '가운데로 불러오기', click: () => win?.webContents.send('pet:command', 'recall') },
@@ -679,11 +681,12 @@ function claudeStatus() {
  * 급한 것만: Claude 허락 요청 · 오류, 할 일 기한, 빌드 실패. (작업 끝남은 말풍선만 — 잦아서)
  * 누르면 그 세션의 터미널로 (sid 가 있을 때).
  */
-function toast(title, body, sid) {
+function toast(title, body, sid, onClick) {
   if (settings.load().toastOn === false || !Notification.isSupported()) return;
   try {
     const n = new Notification({ title, body, silent: false, icon: path.join(__dirname, '..', 'assets', 'icon.png') });
-    if (sid) n.on('click', () => focusClaudeSession(sid));
+    if (onClick) n.on('click', onClick);
+    else if (sid) n.on('click', () => focusClaudeSession(sid));
     n.show();
   } catch (e) {
     console.error('[toast] 실패:', e.message);
@@ -730,6 +733,96 @@ function setTrayAlert(n) {
  * 개발 실행(electron .)은 등록하지 않는다.
  */
 const loginExe = () => process.env.PORTABLE_EXECUTABLE_FILE || process.execPath;
+
+// ════════════════════════════════════════════════════════════
+//  업데이트 (src/updater.js)
+// ════════════════════════════════════════════════════════════
+/**
+ * 켤 때 1분 뒤 · 그 뒤 3시간마다 GitHub Releases 를 본다. 새 버전이 있으면 알림 카드 + 윈도우 알림,
+ * 누르면 확인 창 → "지금 업데이트" 면 받아서 바꿔 끼우고 다시 켠다. "이 버전 건너뛰기" 는 설정 updateSkip.
+ */
+const UPDATE_EVERY = 3 * 3600e3;
+let updateInfo = null;          // 찾은 새 버전 { version, notes, url, asset }
+let updating = false;
+
+async function checkUpdate(manual) {
+  try {
+    const r = await updater.check(manual ? null : settings.load().updateSkip);
+    const was = updateInfo && updateInfo.version;
+    updateInfo = r;
+    if (!r) {
+      if (manual) win?.webContents.send('pet:say', { text: '지금이 최신이야 (v' + app.getVersion() + ')', ms: 3000, quiet: true });
+      return;
+    }
+    console.log('[update] 새 버전', r.version, '(지금', app.getVersion() + ')');
+    if (was === r.version && !manual) return;            // 같은 버전은 한 번만 알린다
+    win?.webContents.send('pet:update', { version: r.version, current: app.getVersion() });
+    toast('DeskPet 새 버전 v' + r.version, '눌러서 업데이트 (지금 v' + app.getVersion() + ')', null, () => promptUpdate());
+  } catch (e) {
+    console.error('[update] 확인 실패:', e.message);
+    if (manual) win?.webContents.send('pet:say', { text: '업데이트를 확인하지 못했어… (' + e.message + ')', ms: 4000, quiet: true });
+  }
+}
+
+/** 확인 창 — 지금 업데이트 / 나중에 / 이 버전 건너뛰기 */
+async function promptUpdate() {
+  if (updating) return;
+  if (!updateInfo) return checkUpdate(true);
+  const r = updateInfo;
+  const can = updater.canInstall();
+  const { response } = await dialog.showMessageBox({
+    type: 'info',
+    title: 'DeskPet 업데이트',
+    message: '새 버전 v' + r.version + ' 이 나왔어요 (지금 v' + app.getVersion() + ')',
+    detail: (r.notes ? r.notes + '\n\n' : '') + (can.ok
+      ? '지금 업데이트하면 받아서 바꿔 끼운 뒤 다시 켜요. 캐릭터 · 설정 · 할 일은 그대로예요.'
+      : can.why + ' — 릴리스 페이지를 열어요.'),
+    buttons: [can.ok ? '지금 업데이트' : '릴리스 페이지 열기', '나중에', '이 버전 건너뛰기'],
+    defaultId: 0,
+    cancelId: 1,
+    noLink: true,
+  });
+  if (response === 2) {
+    settings.save({ updateSkip: r.version });
+    win?.webContents.send('pet:say', { text: 'v' + r.version + ' 은 건너뛸게', ms: 2400, quiet: true });
+    return;
+  }
+  if (response !== 0) return;
+  updating = true;
+  win?.webContents.send('pet:say', { text: 'v' + r.version + ' 받는 중…', source: 'DeskPet', level: 'update', ms: 60000, quiet: true });
+  try {
+    const res = await updater.install(r, (p) => {
+      win?.webContents.send('pet:update-progress', Math.round(p * 100));
+    });
+    if (!res.ok) win?.webContents.send('pet:say', { text: res.why, ms: 6000, quiet: true });
+  } catch (e) {
+    console.error('[update] 설치 실패:', e.message);
+    win?.webContents.send('pet:say', { text: '업데이트 실패… ' + e.message, source: 'DeskPet', level: 'fail', ms: 8000 });
+  } finally {
+    updating = false;
+  }
+}
+
+/** 업데이트로 새로 뜬 앱 — 옛 exe 정리, 자동 시작을 새 경로로, "업데이트했어" */
+function afterUpdate() {
+  updater.cleanupOld(process.argv);
+  const from = (process.argv.find((a) => a.startsWith('--updated-from=')) || '').split('=')[1];
+  const rep = process.argv.find((a) => a.startsWith('--replaced='));
+  if (rep && app.isPackaged && process.platform === 'win32') {
+    const old = rep.slice('--replaced='.length);
+    try {
+      if (app.getLoginItemSettings({ path: old }).openAtLogin) {
+        app.setLoginItemSettings({ openAtLogin: false, path: old });
+        app.setLoginItemSettings({ openAtLogin: true, path: loginExe() });
+      }
+    } catch { /* 없으면 그만 */ }
+  }
+  if (from) {
+    win?.webContents.once('did-finish-load', () => setTimeout(() => {
+      win?.webContents.send('pet:say', { text: 'v' + from + ' → v' + app.getVersion() + ' 업데이트했어', source: 'DeskPet', level: 'update', ms: 8000 });
+    }, 2500));
+  }
+}
 function autoStartStatus() {
   if (!app.isPackaged) return { available: false, on: false };
   return { available: true, on: app.getLoginItemSettings({ path: loginExe() }).openAtLogin };
@@ -778,6 +871,9 @@ async function autoInstallCharacters(cfg) {
   if (installed) win?.reload();      // 새 캐릭터로 다시 부팅
 }
 
+// 시험용 — 설정 폴더를 바꿔서 실행 중인 앱과 겹치지 않게 (중복 실행 잠금도 설정 폴더 기준이다)
+if (process.env.DESKPET_USERDATA) app.setPath('userData', process.env.DESKPET_USERDATA);
+
 // 두 번 실행 방지
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -825,6 +921,16 @@ if (!app.requestSingleInstanceLock()) {
     }
 
     startReminderLoop();
+    afterUpdate();
+    // 개발 옵션 --update-now: 확인 창 없이 바로 받아서 바꿔 끼운다 (업데이트 과정 시험용)
+    if (process.argv.includes('--update-now')) {
+      setTimeout(async () => {
+        await checkUpdate(true);
+        if (updateInfo) updater.install(updateInfo, (p) => console.log('[update] 받는 중', Math.round(p * 100) + '%'))
+          .then((r) => console.log('[update] 결과', JSON.stringify(r))).catch((e) => console.error('[update] 실패', e.message));
+      }, 5000);
+    } else setTimeout(() => checkUpdate(false), 60e3);
+    setInterval(() => checkUpdate(false), UPDATE_EVERY);
     refreshTodo();
     watchTodo();
 
@@ -910,14 +1016,33 @@ ipcMain.handle('todo:add', async (_e, defaults) => {
   const d = defaults || {};
   const r = await openEditor({
     mode: 'todo', title: '할 일 추가',
-    hint: '한 줄에 하나씩.',
+    hint: '첫 줄이 할 일, 다음 줄부터는 설명. 여러 개를 한꺼번에 넣으려면 아래 "줄마다 따로" 를 켠다.',
     todo: { date: d.date || notesStore.ymd(new Date()), backlog: !!d.backlog, category: d.category || '', categories: todo.categories || [], saved: todoCats() },
   });
   if (r && r.text.trim()) {
-    notesStore.add(todoFile(), { text: r.text, date: r.date, backlog: r.backlog, category: r.category, due: r.due });
+    notesStore.add(todoFile(), { text: r.text, date: r.date, backlog: r.backlog, category: r.category, due: r.due, split: !!r.split });
   }
   return refreshTodo();
 });
+/** 할 일 고치기 — 카드의 ✎ · 더블클릭. 입력 창에 지금 내용을 채워 띄운다 */
+ipcMain.handle('todo:edit', async (_e, i, text) => {
+  const it = todo.items.find((x) => x.i === i && x.text === text) || todo.items.find((x) => x.text === text);
+  if (!it) return refreshTodo();
+  const r = await openEditor({
+    mode: 'todo', title: '할 일 수정',
+    hint: '첫 줄이 할 일, 다음 줄부터는 설명.',
+    text: it.text + (it.detail ? '\n' + it.detail : ''),
+    todo: {
+      edit: true, date: it.date || notesStore.ymd(new Date()), backlog: !!it.backlog, category: it.category || '',
+      due: it.explicitDue ? it.due : '', categories: todo.categories || [], saved: todoCats(),
+    },
+  });
+  if (r && r.text.trim()) {
+    notesStore.update(todoFile(), it.i, it.text, { text: r.text, date: r.date, backlog: r.backlog, category: r.category, due: r.due });
+  }
+  return refreshTodo();
+});
+ipcMain.handle('todo:remove', (_e, i, text) => { notesStore.remove(todoFile(), i, text); return refreshTodo(); });
 /** 등록한 분류 (입력 창의 버튼) — 처음엔 예시 몇 개, 사용자가 + 등록 · × 로 고친다 */
 const todoCats = () => settings.load().todoCategories || ['오전', '오후', '3시 전까지', '퇴근 전'];
 ipcMain.handle('todoCats:set', (_e, list) => {
@@ -985,6 +1110,8 @@ ipcMain.handle('recap:setEvery', (_e, every) => {
 });
 ipcMain.on('inbox:count', (_e, n) => setTrayAlert(Number(n) || 0));
 ipcMain.handle('toast:set', (_e, v) => { settings.save({ toastOn: !!v }); return !!v; });
+ipcMain.handle('update:prompt', () => promptUpdate());
+ipcMain.handle('update:check', () => checkUpdate(true));
 ipcMain.handle('autostart:get', () => autoStartStatus());
 ipcMain.handle('autostart:set', (_e, on) => {
   if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: !!on, path: loginExe() });

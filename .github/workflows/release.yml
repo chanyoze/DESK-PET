@@ -1,0 +1,82 @@
+name: Release (업데이트 배포)
+
+# package.json 의 version 을 올려 main 에 푸시하면 돈다.
+#  - 윈도우: 그림 없는 포터블 exe → 릴리스 v버전 (DeskPet-버전.exe)
+#  - 맥:     mac.yml 을 불러 그림 없는 universal zip → 프리릴리스 mac-v버전 (DeskPet-mac-버전.zip)
+# 앱(src/updater.js)은 이 릴리스들을 3시간마다 보고 새 버전이면 "업데이트할까?" 를 띄운다.
+# 그 버전 릴리스가 이미 있으면 건너뛴다 (버전을 안 올린 package.json 수정은 아무 일도 안 한다).
+on:
+  push:
+    branches: [main]
+    paths: ['package.json']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      win: ${{ steps.v.outputs.win }}
+      mac: ${{ steps.v.outputs.mac }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VER=$(node -p "require('./package.json').version")
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+          if gh release view "v$VER" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then echo "win=false" >> "$GITHUB_OUTPUT"; else echo "win=true" >> "$GITHUB_OUTPUT"; fi
+          if gh release view "mac-v$VER" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then echo "mac=false" >> "$GITHUB_OUTPUT"; else echo "mac=true" >> "$GITHUB_OUTPUT"; fi
+          echo "버전 $VER — 윈도우 릴리스 필요: $(grep win= "$GITHUB_OUTPUT" | cut -d= -f2), 맥: $(grep mac= "$GITHUB_OUTPUT" | cut -d= -f2)"
+
+  windows:
+    needs: check
+    if: needs.check.outputs.win == 'true'
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # 지난 버전 이후 커밋 목록을 릴리스 노트로 쓰려고
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # 공개판 — 기본 캐릭터만 들어간다 (게임 그림 · preset.json 은 저장소에 없다)
+      - name: 빌드 (포터블 exe)
+        run: npx electron-builder --win portable --x64 --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+      - name: 릴리스 노트 (지난 v 태그 이후 커밋 제목)
+        run: |
+          PREV=$(git describe --tags --match 'v*' --abbrev=0 2>/dev/null || true)
+          { echo "윈도우 포터블 exe — 받아서 바로 실행. 앱 안에서 업데이트하면 저절로 바뀐다 (캐릭터 · 설정 · 할 일은 그대로)."; echo; echo "바뀐 것:";
+            git log --no-merges --pretty='- %s' ${PREV:+$PREV..}HEAD | sed -E 's/^- [0-9-]+ \/ [^/]+ \/ (- \/ )?/- /' | head -40; } > notes.md
+          cat notes.md
+
+      - name: 릴리스에 올리기
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VER="${{ needs.check.outputs.version }}"
+          gh release create "v$VER" "dist/DeskPet-$VER.exe" --title "DeskPet v$VER" --notes-file notes.md --latest
+
+  mac:
+    needs: check
+    if: needs.check.outputs.mac == 'true'
+    uses: ./.github/workflows/mac.yml
+    with:
+      preset: tools/presets/herdier.json
+      bundle: ''
