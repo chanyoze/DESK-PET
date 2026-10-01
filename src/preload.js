@@ -78,6 +78,8 @@ contextBridge.exposeInMainWorld('petAPI', {
   /** 확인 창 (지금 업데이트 / 나중에 / 건너뛰기) */
   updatePrompt: () => ipcRenderer.invoke('update:prompt'),
   updateCheck: () => ipcRenderer.invoke('update:check'),
+  /** 새로 바뀐 것 창 (최근 버전 몇 개) */
+  whatsNew: () => ipcRenderer.invoke('whatsnew:show'),
   /** 새 버전 { version, current } */
   onUpdate: (cb) => ipcRenderer.on('pet:update', (_e, u) => cb(u)),
   /** 받는 중 % */

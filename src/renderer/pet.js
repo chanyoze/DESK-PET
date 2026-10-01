@@ -1173,7 +1173,7 @@
     }
 
     sections.push({
-      items: [{ label: '혼잣말', value: 'act:chat', checked: chatOn }],
+      items: [{ label: '혼잣말', value: 'act:chat', checked: chatOn }, { label: '새로 바뀐 것 보기', value: 'act:whatsnew' }],
     });
 
     // 할 일 — todo.md (메모장 · Claude Code 로 고쳐도 된다)
@@ -1331,6 +1331,7 @@
       else if (arg === 'hug') { const pr = hug.pair(); if (pr) hug.start(pr[0], pr[1]); }
       else if (arg === 'talk') p.chatter.prod();
       else if (arg === 'update') window.petAPI.updatePrompt();
+      else if (arg === 'whatsnew') window.petAPI.whatsNew();
       else if (arg === 'inbox') setTimeout(() => inbox.open(), 0);   // 이 메뉴가 닫힌 뒤에 연다
       else if (arg === 'chat') {
         chatOn = !chatOn;

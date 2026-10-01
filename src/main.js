@@ -344,6 +344,7 @@ function buildTrayMenu() {
     },
     { label: '할 일 추가…', click: () => win?.webContents.send('pet:command', 'todo:add') },
     { label: '지금 할 일 정리해줘', click: () => sendRecap('manual') },
+    { label: '새로 바뀐 것 보기', click: () => showWhatsNew(whatsNewBetween(null, app.getVersion()).slice(0, 3)) },
     { label: updateInfo ? '⬆ 업데이트 v' + updateInfo.version + '…' : '업데이트 확인 (지금 v' + app.getVersion() + ')', click: () => (updateInfo ? promptUpdate() : checkUpdate(true)) },
     // 화면 공유 · 회의 때 — 캐릭터를 못 잡아도 여기서 숨길 수 있게
     { label: '메모 · 할 일 카드 숨기기', type: 'checkbox', checked: !!settings.load().notesHidden, click: (it) => setNotesHidden(it.checked) },
@@ -803,6 +804,51 @@ async function promptUpdate() {
   }
 }
 
+/**
+ * 새로 바뀐 것 — 버전이 올라간 뒤 처음 켤 때 한 번 (src/whatsnew.json).
+ * 설정 lastVersion 과 비교해서 그 사이 버전들의 요약을 창으로 보여 준다.
+ *  - lastVersion 이 없는데 설정 파일은 있었다 → 이 기능 전 버전에서 올라온 것 → 지금 버전 요약만
+ *  - 설정 파일도 없었다 → 처음 설치 → 보여 주지 않는다
+ */
+function whatsNewBetween(from, to) {
+  let data = {};
+  try { data = require('./whatsnew.json'); } catch { /* 없으면 빈 것 */ }
+  return Object.keys(data)
+    .filter((v) => /^\d+\.\d+\.\d+$/.test(v) && (!from || updater.cmp(v, from) > 0) && updater.cmp(v, to) <= 0)
+    .sort((a, b) => updater.cmp(b, a))
+    .map((v) => ({ version: v, items: data[v] || [] }));
+}
+
+async function showWhatsNew(list, fromVersion) {
+  if (!list.length) return;
+  const cur = app.getVersion();
+  const shown = list.slice(0, 4);                 // 여러 버전을 건너뛰었으면 최근 넷까지
+  await dialog.showMessageBox({
+    type: 'info',
+    title: 'DeskPet — 새로 바뀐 것',
+    message: fromVersion ? 'v' + fromVersion + ' → v' + cur + ' 에서 바뀐 것' : 'v' + cur + ' 에서 바뀐 것',
+    detail: shown.map((v) => 'v' + v.version + '\n' + v.items.map((t) => '  • ' + t).join('\n')).join('\n\n') +
+      (list.length > shown.length ? '\n\n… 그 전 버전 ' + (list.length - shown.length) + '개는 README 의 로드맵에' : ''),
+    buttons: ['확인'],
+    noLink: true,
+  });
+}
+
+/** 켤 때 — 버전이 올라갔으면 보여 주고 lastVersion 을 지금 버전으로 */
+function checkWhatsNew(hadSettings) {
+  const cur = app.getVersion();
+  const last = settings.load().lastVersion;
+  let list = [];
+  if (last && updater.cmp(cur, last) > 0) list = whatsNewBetween(last, cur);
+  else if (!last && hadSettings) list = whatsNewBetween(null, cur).slice(0, 1);
+  if (last !== cur) settings.save({ lastVersion: cur });
+  if (!list.length) return;
+  console.log('[whatsnew]', last || '(없음)', '→', cur, list.map((v) => v.version).join(','));
+  // 캐릭터가 뜬 뒤에 (창이 먼저 뜨면 어색하다)
+  const show = () => setTimeout(() => showWhatsNew(list, last), 3000);
+  if (win && !win.webContents.isLoading()) show(); else win?.webContents.once('did-finish-load', show);
+}
+
 /** 업데이트로 새로 뜬 앱 — 옛 exe 정리, 자동 시작을 새 경로로, "업데이트했어" */
 function afterUpdate() {
   updater.cleanupOld(process.argv);
@@ -879,6 +925,7 @@ if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.whenReady().then(() => {
+    const hadSettings = fs.existsSync(settings.FILE());           // 처음 설치인지 (새로 바뀐 것 창)
     if (IS_WIN) app.setAppUserModelId('com.chanyoze.deskpet');     // 윈도우 알림에 DeskPet 으로 뜨게
     if (IS_MAC && app.dock) app.dock.hide();                       // 맥: Dock 에 아이콘 없이 메뉴바에만
     const cfg = settings.load();
@@ -922,6 +969,7 @@ if (!app.requestSingleInstanceLock()) {
 
     startReminderLoop();
     afterUpdate();
+    checkWhatsNew(hadSettings);
     // 개발 옵션 --update-now: 확인 창 없이 바로 받아서 바꿔 끼운다 (업데이트 과정 시험용)
     if (process.argv.includes('--update-now')) {
       setTimeout(async () => {
@@ -1111,6 +1159,7 @@ ipcMain.handle('recap:setEvery', (_e, every) => {
 ipcMain.on('inbox:count', (_e, n) => setTrayAlert(Number(n) || 0));
 ipcMain.handle('toast:set', (_e, v) => { settings.save({ toastOn: !!v }); return !!v; });
 ipcMain.handle('update:prompt', () => promptUpdate());
+ipcMain.handle('whatsnew:show', () => showWhatsNew(whatsNewBetween(null, app.getVersion()).slice(0, 3)));
 ipcMain.handle('update:check', () => checkUpdate(true));
 ipcMain.handle('autostart:get', () => autoStartStatus());
 ipcMain.handle('autostart:set', (_e, on) => {
