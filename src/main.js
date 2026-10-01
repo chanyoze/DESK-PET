@@ -342,6 +342,9 @@ function buildTrayMenu() {
         },
       })),
     },
+    // 놓친 알림 — 트레이에 빨간 점이 있을 때 여기서 바로 목록을 연다
+    { label: inboxUnread ? '🔔 놓친 알림 ' + inboxUnread + '개 보기' : '최근 알림 보기', click: () => win?.webContents.send('pet:command', 'inbox') },
+    { type: 'separator' },
     { label: '할 일 추가…', click: () => win?.webContents.send('pet:command', 'todo:add') },
     { label: '지금 할 일 정리해줘', click: () => sendRecap('manual') },
     { label: '새로 바뀐 것 보기', click: () => showWhatsNew(whatsNewBetween(null, app.getVersion()).slice(0, 3)) },
@@ -699,6 +702,7 @@ function toast(title, body, sid, onClick) {
  * 작업 표시줄 버튼이 없는 창이라 깜빡일 수가 없어서 트레이로 대신한다.
  */
 let trayIcons = null;
+let inboxUnread = 0;           // 트레이 메뉴 맨 위 "놓친 알림 N개 보기"
 
 /** 트레이 아이콘 — 맥 메뉴바는 18pt 가 적당하다 (32px 그대로면 크게 튄다) */
 function trayImage() {
@@ -706,6 +710,7 @@ function trayImage() {
   return IS_MAC ? img.resize({ width: 18, height: 18 }) : img;
 }
 function setTrayAlert(n) {
+  inboxUnread = n;
   if (!tray) return;
   if (!trayIcons) {
     const base = trayImage();
