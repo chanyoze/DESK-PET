@@ -806,6 +806,7 @@
     on(ev) {
       if (ev.kind === 'start' && !this.busy) this.busySince = performance.now();
       this.busy = ev.busy || 0;
+      if (ev.sid && ev.kind !== 'permission' && ev.kind !== 'waiting') inbox.resolve(ev.sid);
       const p = pets[0];
       if (!p || !p.view || ev.quiet || ev.kind === 'start' || ev.kind === 'quick' || ev.kind === 'end') return;
       console.log('[claude] 반응:', ev.kind, ev.project || '', ev.sec != null ? ev.sec + 's' : '');
@@ -931,11 +932,23 @@
     rect: null,
 
     add(msg) {
-      const it = { id: 'a' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), at: Date.now(), card: msg.card, sid: msg.sid || '', update: !!msg.update, read: false };
+      // 손이 필요한 것만 안 읽음으로 센다 — 끝남 · 정보는 목록에만 (Claude 를 여럿 돌리면 끝남이 금방 수십 개가 된다)
+      const level = msg.card && msg.card.level;
+      const quiet = level === 'done' || level === 'info';
+      const it = { id: 'a' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), at: Date.now(), card: msg.card, sid: msg.sid || '', update: !!msg.update, read: quiet };
       msg.inboxId = it.id;
       this.items.unshift(it);
       if (this.items.length > INBOX_MAX) this.items.length = INBOX_MAX;
       this.sync();
+    },
+
+    /** 그 세션이 다시 움직였으면(시작 · 끝남 · 오류) 앞서 쌓인 허락 · 입력 대기는 해결된 것으로 */
+    resolve(sid) {
+      let n = 0;
+      for (const x of this.items) {
+        if (!x.read && x.sid === sid && x.card && (x.card.level === 'permission' || x.card.level === 'waiting')) { x.read = true; n++; }
+      }
+      if (n) this.sync();
     },
 
     unread() {
@@ -1770,6 +1783,8 @@
       claude.on({ kind: cmd.slice(7), project: 'test', sec: 42, busy: 0 });
     } else if (cmd.indexOf('notes:hidden:') === 0) {
       window.PetNotes.setHidden(cmd.slice(13) === '1');
+    } else if (cmd === 'inbox') {
+      inbox.open();
     } else if (cmd === 'recap') {
       window.petAPI.recapNow();          // 정각 recap 바로 보기 (--start=recap)
     } else if (cmd === 'todo:add') {
