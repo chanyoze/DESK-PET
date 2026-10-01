@@ -393,7 +393,8 @@ body {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
   cursor: pointer;
   will-change: transform;
-  animation: badge-pulse 1.8s ease-in-out infinite;
+  /* 무한 반복은 화면 전체를 계속 다시 합성하게 만든다 (가볍게 만들기) — 네 번만, 새 알림이 오면 다시 */
+  animation: badge-pulse 1.8s ease-in-out 4;
 }
 
 @keyframes badge-pulse {

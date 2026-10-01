@@ -240,6 +240,7 @@ function createWindow() {
   win.webContents.on('did-finish-load', () => { lastCursor = ''; });
 
   const flags = ['trace', 'hitbox'].filter((f) => process.argv.includes('--' + f));
+  if (/^\d+$/.test(process.env.DESKPET_FPS || '')) flags.push('fps=' + process.env.DESKPET_FPS);   // 측정용 — 프레임 고정
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'), flags.length ? { search: flags.join('&') } : {});
 
   // 렌더러 콘솔을 터미널로 넘긴다 (투명 창이라 오류를 눈으로 볼 수 없다)
@@ -649,24 +650,32 @@ function claudeSessionList() {
  * 윈도우는 백그라운드 프로세스가 다른 창을 앞으로 올리는 걸 막아서, ALT 를 누른 채로
  * SetForegroundWindow 를 부르는 흔한 우회를 쓴다 (userData 의 deskpet-focus.ps1).
  */
+/**
+ * 결과 { ok, reason } — reason: nowindow(창을 아직 모름) · nosession(앱을 켠 뒤 그 세션 소식이 없음) ·
+ * gone(창이 닫힘) · flash(윈도우가 막아서 작업 표시줄에서 깜빡이게만 함)
+ */
 function focusClaudeSession(sid) {
-  if (!IS_WIN) return { ok: false };
+  if (!IS_WIN) return Promise.resolve({ ok: false });
   const s = claudeSessions.get(sid);
-  if (!s || !s.win) return { ok: false, reason: 'nowindow' };
+  console.log('[claude] 창 앞으로 요청:', sid.slice(0, 8), s ? s.project : '(세션 모름)', s && s.win ? s.win.name + ' ' + s.win.hwnd : '(창 모름)');
+  if (!s) return Promise.resolve({ ok: false, reason: 'nosession' });
+  if (!s.win) return Promise.resolve({ ok: false, reason: 'nowindow' });
   const script = path.join(app.getPath('userData'), 'deskpet-focus.ps1');
   try {
     fs.writeFileSync(script, psScripts.focusScript(), 'utf8');
   } catch (e) {
-    return { ok: false, reason: e.message };
+    return Promise.resolve({ ok: false, reason: e.message });
   }
   const { execFile } = require('child_process');
-  execFile('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script, '-Hwnd', s.win.hwnd],
-    { windowsHide: true, timeout: 8000 }, (err, stdout) => {
-      const r = String(stdout || '').trim();
-      console.log('[claude] 창 앞으로:', s.project, r || (err && err.message));
-      if (r === 'gone') s.win = null;       // 창이 닫혔으면 다음 훅 때 다시 찾는다
-    });
-  return { ok: true };
+  return new Promise((resolve) => {
+    execFile('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script, '-Hwnd', s.win.hwnd],
+      { windowsHide: true, timeout: 8000 }, (err, stdout) => {
+        const r = String(stdout || '').trim();
+        console.log('[claude] 창 앞으로 결과:', s.project, r || (err && err.message));
+        if (r === 'gone') s.win = null;       // 창이 닫혔으면 다음 훅 때 다시 찾는다
+        resolve({ ok: r === 'ok' || r === 'ok2', reason: r || 'error' });
+      });
+  });
 }
 
 function claudeStatus() {
@@ -688,7 +697,9 @@ function claudeStatus() {
 function toast(title, body, sid, onClick) {
   if (settings.load().toastOn === false || !Notification.isSupported()) return;
   try {
-    const n = new Notification({ title, body, silent: false, icon: path.join(__dirname, '..', 'assets', 'icon.png') });
+    const n = new Notification({ title, body, silent: false, icon: fs.existsSync(privateIconPath()) ? privateIconPath() : path.join(__dirname, '..', 'assets', 'icon.png') });
+    // 윈도우는 시작 메뉴에 등록되지 않은 포터블 앱의 토스트 클릭을 앱에 잘 넘겨주지 않는다 — 들어오는지 로그로 본다
+    n.on('click', () => console.log('[toast] 클릭:', title));
     if (onClick) n.on('click', onClick);
     else if (sid) n.on('click', () => focusClaudeSession(sid));
     n.show();
@@ -705,7 +716,17 @@ let trayIcons = null;
 let inboxUnread = 0;           // 트레이 메뉴 맨 위 "놓친 알림 N개 보기"
 
 /** 트레이 아이콘 — 맥 메뉴바는 18pt 가 적당하다 (32px 그대로면 크게 튄다) */
+/**
+ * 개인 아이콘 — userData/private-icon.png 가 있으면 트레이 · 윈도우 알림에 쓴다 (exe 아이콘은 개인 빌드가 넣는다).
+ * 실행 중에 읽으므로 업데이트로 공개판이 돼도 트레이 아이콘은 그대로다.
+ */
+const privateIconPath = () => path.join(app.getPath('userData'), 'private-icon.png');
 function trayImage() {
+  const own = privateIconPath();
+  if (fs.existsSync(own)) {
+    const img = nativeImage.createFromPath(own);
+    if (!img.isEmpty()) return img.resize({ width: IS_MAC ? 18 : 32, height: IS_MAC ? 18 : 32, quality: 'best' });
+  }
   const img = nativeImage.createFromPath(path.join(__dirname, '..', 'assets', 'tray.png'));
   return IS_MAC ? img.resize({ width: 18, height: 18 }) : img;
 }
@@ -924,6 +945,52 @@ async function autoInstallCharacters(cfg) {
 
 // 시험용 — 설정 폴더를 바꿔서 실행 중인 앱과 겹치지 않게 (중복 실행 잠금도 설정 폴더 기준이다)
 if (process.env.DESKPET_USERDATA) app.setPath('userData', process.env.DESKPET_USERDATA);
+
+/**
+ * 로그 파일 — exe 로 돌 땐 콘솔이 안 보여서, 클릭 · 창 찾기 · 업데이트 같은 일을 userData/deskpet.log 에 남긴다.
+ * (렌더러 콘솔도 메인으로 넘어오므로 같이 남는다) 1MB 를 넘으면 켤 때 deskpet.log.old 로 넘긴다.
+ */
+(function fileLog() {
+  try {
+    const file = path.join(app.getPath('userData'), 'deskpet.log');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    if (fs.existsSync(file) && fs.statSync(file).size > 1048576) fs.renameSync(file, file + '.old');
+    const out = fs.createWriteStream(file, { flags: 'a' });
+    const stamp = () => { const d = new Date(); return d.toLocaleDateString('sv') + ' ' + d.toTimeString().slice(0, 8); };
+    for (const k of ['log', 'warn', 'error']) {
+      const orig = console[k].bind(console);
+      console[k] = (...a) => {
+        orig(...a);
+        try {
+          out.write(stamp() + (k === 'log' ? ' ' : ' ' + k.toUpperCase() + ' ') +
+            a.map((x) => (typeof x === 'string' ? x : x instanceof Error ? x.stack : JSON.stringify(x))).join(' ') + '\n');
+        } catch { /* 로그 실패는 무시 */ }
+      };
+    }
+    console.log('[app] 시작 v' + app.getVersion(), process.platform, app.isPackaged ? 'exe' : 'dev', process.env.PORTABLE_EXECUTABLE_FILE || process.execPath);
+  } catch { /* 로그를 못 남겨도 앱은 돈다 */ }
+})();
+
+/**
+ * GPU — 스프라이트 · 파츠 캐릭터는 2D 캔버스라 하드웨어 가속 없이도 그린다. 끄면 GPU 프로세스가 가벼워진다
+ * (가볍게 만들기, ROADMAP). Spine 캐릭터는 WebGL 이라 켠다.
+ * 설정 gpu: 'auto'(기본 — 주인공 · 동료 중 Spine 이 있을 때만 켬) | 'on' | 'off'. 앱이 뜨기 전에 정해야 한다.
+ */
+function wantGpu() {
+  if (process.env.DESKPET_GPU) return process.env.DESKPET_GPU === 'on';     // 측정 · 시험용
+  const cfg = settings.load();
+  if (cfg.gpu === 'on') return true;
+  if (cfg.gpu === 'off') return false;
+  const ids = [cfg.character, cfg.companion].filter(Boolean);
+  if (!ids.length) return false;                                              // 기본 캐릭터(파츠)
+  return ids.some((id) => {
+    const dir = charPath(id);
+    if (!dir) return false;
+    try { return JSON.parse(fs.readFileSync(path.join(dir, 'character.json'), 'utf8')).renderer === 'spine'; } catch { return false; }
+  });
+}
+const gpuOn = wantGpu();
+if (!gpuOn) app.disableHardwareAcceleration();
 
 // 두 번 실행 방지
 if (!app.requestSingleInstanceLock()) {

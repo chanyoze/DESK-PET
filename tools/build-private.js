@@ -103,6 +103,16 @@ const config = {
   portable: { artifactName: 'DeskPet-private-${version}.exe' },
 };
 
+/**
+ * 개인 아이콘 — %APPDATA%/deskpet/private-icon.png (256px 이상 정사각 PNG) 가 있으면 exe 아이콘으로 쓴다.
+ * 게임 그림이 든 아이콘일 수 있어서 저장소가 아니라 사용자 폴더에 둔다 (공개 빌드는 assets/icon.png 그대로).
+ */
+const privateIcon = path.join(USER_DIR, 'private-icon.png');
+if (fs.existsSync(privateIcon)) {
+  config.win = { ...pkg.build.win, icon: privateIcon };
+  console.log('[private] 아이콘:', privateIcon);
+}
+
 builder.build({ targets: builder.Platform.WINDOWS.createTarget('portable', builder.Arch.x64), config })
   .then((files) => {
     console.log('[private] 완료:', files.filter((f) => f.endsWith('.exe')).join(', '));

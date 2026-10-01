@@ -159,6 +159,8 @@
     async load(id) {
       const loaded = await window.petAPI.loadCharacter(id);
       const nv = await makeView(loaded);
+      // 그림 원본(base64 문자열)은 뷰가 다 읽었으니 버린다 — 캐릭터를 바꾸면 다시 받아 온다
+      delete loaded.files;
       const old = this.view;
       this.character = loaded;
       this.view = nv;
@@ -842,8 +844,17 @@
 
     /** 세션의 터미널 창으로 (말풍선 · 메뉴에서) */
     async focus(sid, p) {
+      console.log('[claude] 터미널로 누름:', sid ? sid.slice(0, 8) : '(세션 없음)');
       const r = await window.petAPI.claudeFocus(sid);
-      if (!r.ok && p) p.say({ text: this.line(p, 'noWindow'), ms: 2600, quiet: true });
+      if (r.ok || !p) return;
+      // 왜 못 갔는지 — 캐릭터 말투 한 줄 + 사실
+      const why = {
+        nosession: '앱을 켠 뒤로 그 세션 소식이 없어서 창을 몰라 — 그 터미널에서 한 번 더 대화하면 찾아 둘게',
+        nowindow: '그 세션 창을 아직 못 찾았어 — 그 터미널에서 한 번 더 대화하면 다시 찾아 볼게',
+        gone: '그 창은 닫혔나 봐',
+        flash: '윈도우가 막아서 못 가져왔어 — 작업 표시줄에서 깜빡이는 창이야',
+      }[r.reason] || '창으로 못 갔어 (' + r.reason + ')';
+      p.say({ text: (r.reason === 'flash' ? '' : this.line(p, 'noWindow') + '\n') + why, ms: 6000, quiet: true });
     },
 
     /** 메뉴 항목 — 세션 목록 */
@@ -968,6 +979,12 @@
         this.el.title = '놓친 알림 — 눌러서 보기';
         document.body.appendChild(this.el);
       }
+      if (n > (this.lastN || 0)) {                      // 늘었으면 다시 깜빡인다 (네 번)
+        this.el.style.animation = 'none';
+        void this.el.offsetWidth;
+        this.el.style.animation = '';
+      }
+      this.lastN = n;
       this.el.hidden = !n;
       this.el.textContent = '🔔 ' + n;
       window.petAPI.inboxCount(n);
@@ -1318,6 +1335,7 @@
       if (arg === 'clear') { inbox.items = []; inbox.sync(); }
       else {
         const it = inbox.items.find((x) => x.id === arg);
+        console.log('[inbox] 목록 항목 누름:', it ? it.card.level + ' ' + (it.sid ? it.sid.slice(0, 8) : '(sid 없음)') : '(없음)');
         if (it && it.update) window.petAPI.updatePrompt();
         else if (it && it.sid) claude.focus(it.sid, p);
       }
@@ -1464,6 +1482,11 @@
   function syncInteractive(force) {
     const want = drag ? true : hitTest(cursor.x, cursor.y);
     if (want !== hover || force) {
+      if (want && !hover && !drag) {
+        const what = menu && menu.open ? '메뉴' : inRect(inbox.rect, cursor.x, cursor.y) ? '배지' : bubbleAt(cursor.x, cursor.y) ? '말풍선' :
+          window.PetNotes && window.PetNotes.hit(cursor.x, cursor.y) ? '카드' : '캐릭터';
+        if (what !== '캐릭터') console.log('[mouse] 클릭 받기 시작 —', what, Math.round(cursor.x) + ',' + Math.round(cursor.y));
+      }
       hover = want;
       window.petAPI.setInteractive(want);
     }
@@ -1522,12 +1545,13 @@
     if (e.button !== 0 || !hitTest(e.clientX, e.clientY)) return;
     // 메뉴·말풍선 위 클릭은 UI가 처리한다 (드래그 시작하지 않는다)
     if (menu && inRect(menu.rect, e.clientX, e.clientY)) return;
-    if (inRect(inbox.rect, e.clientX, e.clientY)) { inbox.open(); return; }
+    if (inRect(inbox.rect, e.clientX, e.clientY)) { console.log('[inbox] 배지 누름'); inbox.open(); return; }
     const bp = bubbleAt(e.clientX, e.clientY);
     if (bp) {
       // Claude 세션 말풍선이면 그 터미널로 간다
       const sid = bp.bubble.current && bp.bubble.current.sid;
       const isUpdate = !!(bp.bubble.current && bp.bubble.current.update);   // 새 버전 카드면 업데이트 확인 창
+      console.log('[bubble] 누름:', bp.bubble.current && bp.bubble.current.card ? bp.bubble.current.card.level : '대화', sid ? 'sid ' + sid.slice(0, 8) : '');
       if (bp.bubble.current && bp.bubble.current.inboxId) inbox.read(bp.bubble.current.inboxId);
       bp.bubble.dismiss();
       if (sid) claude.focus(sid, bp);
@@ -1600,9 +1624,57 @@
     console.error('렌더 오류:', e.message, e.filename + ':' + e.lineno);
   });
 
+  // ── 프레임 속도 — 지금 하는 일에 맞춰 ─────────────────────
+  /**
+   * 늘 60fps 로 그리면 가만히 있어도 CPU · GPU 를 꽤 쓴다 (2026-10-01 측정: 한 코어의 20%, 대부분 GPU · 렌더러).
+   * 스프라이트는 초당 6~14장만 바뀌므로 움직임이 빠를 때만 촘촘히 그린다:
+   *   끌기 · 떨어짐 · 달리기 · 벽 타기 · 미끄러짐 40 / 걷기 30 / 서 있기 · 앉기 12 / 모두 잠 6
+   *   (2026-10-01 프레임별 CPU 측정 — GPU 끔 기준 한 코어의 8fps 3.6% · 12fps 4.4% · 20~40fps 9~12% 로 비슷하다가
+   *    60fps 에서 25%+ 로 뛴다 → 60 은 쓰지 않고 빠른 동작도 40 까지)
+   *   파츠 · Spine 캐릭터는 부드러운 동작이라 최소 30
+   * 창이 모니터 전체 크기라 한 프레임마다 화면 전체를 다시 합성한다 → 프레임 수가 곧 CPU 다
+   * 마우스를 누르거나 움직이면 바로 깨운다 (wake) — 잡을 때 굼뜨지 않게.
+   */
+  const FAST_STATES = ['drag', 'fall', 'climb', 'run', 'approach', 'rush', 'vanish'];
+  const MID_STATES = ['walk', 'nightmare'];
+  const FIXED_FPS = Number((/[?&]fps=(\d+)/.exec(location.search) || [])[1]) || 0;   // 측정용 (DESKPET_FPS)
+  function wantFps() {
+    if (FIXED_FPS) return FIXED_FPS;
+    if (drag) return 40;
+    let fps = 6;
+    let allAsleep = pets.length > 0;
+    for (const p of pets) {
+      const S = p.S;
+      if (FAST_STATES.indexOf(S.state) >= 0) return 40;
+      if (S.vy !== 0 || S.y < stage.ground - 0.5) return 40;                        // 공중
+      if (Math.abs(S.vx) > 5 && MID_STATES.indexOf(S.state) < 0) return 40;         // 던진 뒤 미끄러짐
+      if (MID_STATES.indexOf(S.state) >= 0) fps = Math.max(fps, 30);
+      if (p.view && window.SpriteView && !(p.view instanceof window.SpriteView)) fps = Math.max(fps, 30);
+      if (S.state !== 'sleep') allAsleep = false;
+    }
+    return allAsleep ? fps : Math.max(fps, 12);
+  }
+
+  let frameTimer = null;
+  function scheduleFrame() {
+    const fps = wantFps();
+    if (fps >= 60) requestAnimationFrame(frame);           // 지금은 40 이 최고라 늘 타이머 — 화면 주사율에 묶이지 않는다
+    else frameTimer = setTimeout(() => { frameTimer = null; frame(performance.now()); }, 1000 / fps);
+  }
+  /** 느린 박자로 쉬는 중이면 바로 한 프레임 — 마우스 · 외부 알림 */
+  function wakeFrames() {
+    if (!frameTimer) return;
+    clearTimeout(frameTimer);
+    frameTimer = null;
+    requestAnimationFrame(frame);
+  }
+  window.addEventListener('mousedown', wakeFrames, true);
+  window.addEventListener('mousemove', wakeFrames, true);
+
   let last = performance.now();
   function frame(now) {
-    const dt = Math.min(0.05, (now - last) / 1000);
+    // 애니메이션 시간에도 쓰는 값이라 느린 박자(최대 1/6초)는 그대로 둔다. 너무 긴 멈춤만 자른다
+    const dt = Math.min(0.2, (now - last) / 1000);
     last = now;
     try {
       for (const p of pets) p.update(dt);
@@ -1626,7 +1698,7 @@
     } catch (err) {
       console.error('프레임 실패:', err && err.stack ? err.stack : err);
     }
-    requestAnimationFrame(frame);
+    scheduleFrame();
   }
 
   // ════════════════════════════════════════════════════════════
@@ -1690,8 +1762,9 @@
         inbox.add(msg);
       }
       pets[0].say(msg);
+      wakeFrames();
     });
-    window.petAPI.onClaude((ev) => claude.on(ev));
+    window.petAPI.onClaude((ev) => { claude.on(ev); wakeFrames(); });
     window.petAPI.onUpdate((u) => {
       updateAvail = u.version;
       if (!pets[0]) return;
@@ -1721,6 +1794,7 @@
   let booted = false;
   let pendingCmd = null;
   window.petAPI.onCommand((cmd) => {
+    wakeFrames();
     if (booted) runCommand(cmd);
     else pendingCmd = cmd;
   });

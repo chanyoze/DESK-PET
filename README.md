@@ -413,6 +413,10 @@ npm run dist:private -- termina-marina   # 골라서
 - 지금 설정(주인공 · 동료 · 분위기 · 크기 · 무장)이 `preset.json` 으로 들어가서, 새 PC에서 처음 켜도 같은 상태로 시작한다
 - **게임 에셋이 들어간 파일이다. 나만 쓰는 PC에 복사하는 용도로만 쓰고, 릴리스나 공유는 하지 않는다.**
   `characters/*` · `preset.json` · `dist/` 는 전부 gitignore 되어 있다
+- **나만의 아이콘** — `%APPDATA%\deskpet\private-icon.png` (256px 이상 정사각 PNG)를 두면
+  - 개인 빌드 exe 아이콘이 된다 (빌드할 때 넣는다)
+  - 트레이 아이콘 · 윈도우 알림 아이콘도 된다 (실행 중에 읽으므로 업데이트로 공개판이 돼도 유지)
+  - 게임 그림이 든 사진일 수 있어서 저장소가 아니라 사용자 폴더에 둔다. 바탕화면 아이콘이 안 바뀌어 보이면 윈도우 아이콘 캐시 탓 — F5
 
 ## 외부에서 말 시키기
 
@@ -583,6 +587,9 @@ IK로 만들어낼 수 있으므로 그쪽에서만 켠다.
 { "character": "mudrock", "companion": null, "display": null, "sizeScale": 1, "reminders": [], "notifyPort": 45678, "speakOnClaude": true }
 ```
 
+**GPU** — `"gpu": "auto"`(기본)면 주인공 · 동료 중 Spine 캐릭터가 있을 때만 하드웨어 가속을 켠다. 스프라이트 · 파츠는
+2D 캔버스라 끄는 편이 가볍다 (전용 메모리 약 −80MB). `"on"` · `"off"` 로 고정할 수 있고, 바꾸면 다시 켜야 적용된다.
+
 **윈도우 시작할 때 실행** 은 메뉴에서 켠다 (exe 로 실행했을 때만 보인다). 포터블 exe 는 실행할 때마다
 임시 폴더에 풀리므로 그 경로가 아니라 원래 exe 경로(`PORTABLE_EXECUTABLE_FILE`)를 등록한다.
 exe 를 다른 곳으로 옮기면 한 번 껐다 다시 켤 것.
@@ -602,6 +609,7 @@ npx electron . --start=talk           # 둘의 대화 바로 보기
 npx electron . --start=nightmare      # 원작처럼 연출 바로 보기 (nightmare · down · bloodcast · teleport)
 npx electron . --start=claude:done    # Claude 반응 바로 보기 (done · fail · permission · waiting)
 npx electron . --start=recap          # 할 일 recap 바로 보기 (--start=todo:add 는 입력 창)
+node tools/measure.js                 # 무게 재기 — 메모리(프로세스별) · CPU% (--exe 경로 면 exe · 풀린 크기도), 결과 dist/measure/
 npx electron . --start=cursor:chase   # 커서 놀이 바로 보기 (chase · flee, 저장 안 함)
 npx electron . --character=kaltsit    # 특정 캐릭터로 실행
 npx electron . --shot=out.png,5000    # 창 내용만 PNG로 저장하고 종료
@@ -617,8 +625,8 @@ npx electron . --hitbox               # 클릭 판정 영역을 화면에 표시
 
 [docs/ROADMAP.md](docs/ROADMAP.md) 참고.
 
-**다음 큰 목표는 가볍게 만들기** — 지금 메모리 약 390MB(프로세스 4개) · exe 약 100MB.
-1단계는 Electron 안에서(안 쓰는 언어 파일 빼기 · 한가할 때 프레임 낮추기 · 스프라이트 메모리 정리 · GPU 프로세스 없애기 시험),
+**가볍게 만들기** — 1단계(Electron 안에서) 1차 완료: 가만히 둔 상태 CPU 한 코어의 **19.9% → 6.3%**, 전용 메모리 **253 → 135MB**,
+exe **102 → 94.5MB** (프레임 조절 · GPU 끄기 · 스프라이트 원본 버리기 · 언어 파일 빼기, 측정은 `tools/measure.js`).
 2단계는 Tauri(시스템 웹뷰)로 옮기는 것을 검토한다. 업데이트 기능이 있으니 바뀐 판은 쓰는 사람 모두에게 알림으로 간다.
 
 ## 라이선스
