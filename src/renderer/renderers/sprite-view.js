@@ -151,6 +151,10 @@
       this.animations = Object.keys(this.clips);
       if (!this.clips.idle) throw new Error('sprite 캐릭터에는 idle 클립이 꼭 있어야 한다');
 
+      // 칸은 다 잘라 뒀다 — 시트 원본 이미지와 칸마다 픽셀 배열은 더 안 쓴다 (가볍게 만들기: 렌더러 메모리)
+      for (const sh of Object.values(this.sheets)) sh.img = null;
+      for (const fr of Object.values(this.frames)) fr.pixels = null;
+
       // 키는 대기 자세의 실제 그림 높이 기준 — Spine·파츠와 같은 뜻이 되게
       const targetH = character.height || 150;
       this.scale = targetH / this.clips.idle.figureH;

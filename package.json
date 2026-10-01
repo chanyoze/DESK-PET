@@ -55,6 +55,11 @@
     "portable": {
       "artifactName": "DeskPet-${version}.exe"
     },
-    "compression": "maximum"
+    "compression": "maximum",
+    "electronLanguages": [
+      "ko",
+      "en",
+      "en-US"
+    ]
   }
 }
