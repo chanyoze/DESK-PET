@@ -15,6 +15,17 @@ on:
         description: '앱에 넣을 레시피 (예: pokemon/herdier) — 비우면 그림 없는 앱'
         default: ''
         required: false
+  # release.yml 이 버전을 올려 푸시했을 때 부른다 (그림 없는 앱 → mac-v버전 프리릴리스 → 앱 업데이트 알림)
+  workflow_call:
+    inputs:
+      preset:
+        type: string
+        default: 'tools/presets/herdier.json'
+        required: false
+      bundle:
+        type: string
+        default: ''
+        required: false
 
 permissions:
   contents: write

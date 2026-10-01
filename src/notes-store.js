@@ -34,6 +34,8 @@ const BACKLOG = /^(언젠가|백로그|someday|backlog)(?=$|[\s(:·-])/i;
 const DUE = /\s*\(~\s*(?:((?:\d{4}-)?\d{1,2}-\d{1,2}))?\s*(\d{1,2}:\d{2})?\s*\)\s*$/;
 
 const BACKLOG_TITLE = '언젠가';
+/** 설명 줄 — 두 칸 이상 들여쓴 줄 (공백뿐인 줄도 설명 안의 빈 줄로 본다) */
+const CONT = /^ {2,}/;
 
 const TEMPLATE = [
   '# 할 일',
@@ -100,8 +102,16 @@ function parse(raw) {
   const items = [];
   const sections = [];
   let date = null, backlog = true, category = null, sec = null;   // 제목 전 항목은 백로그
+  let last = null;                                                  // 설명 줄을 붙일 바로 앞 항목
   lines.forEach((l, line) => {
     let m;
+    // 항목 바로 아래 두 칸 이상 들여쓴 줄은 그 항목의 설명 (빈 줄이 끼면 끊긴다)
+    if (last && CONT.test(l) && !ITEM.exec(l)) {
+      last.detailLines.push(l.replace(/^ {2}/, ''));
+      last.lineEnd = line;
+      return;
+    }
+    last = null;
     if ((m = H2.exec(l))) {
       const t = m[1];
       const dm = DATE.exec(t);
@@ -118,14 +128,36 @@ function parse(raw) {
       return;
     }
     if ((m = ITEM.exec(l)) && m[4].trim()) {
-      const { text, due } = splitDue(m[4].trim(), date, category);
-      items.push({
-        i: items.length, line, text, done: m[2] !== ' ',
-        date, backlog: backlog || (!date && !sec), category, due,
-      });
+      const { text, due, explicitDue } = splitDue(m[4].trim(), date, category);
+      last = {
+        i: items.length, line, lineEnd: line, text, done: m[2] !== ' ',
+        date, backlog: backlog || (!date && !sec), category, due, explicitDue, detailLines: [],
+      };
+      items.push(last);
     }
   });
+  for (const it of items) {
+    it.detail = it.detailLines.join('\n').replace(/\s+$/, '');
+    delete it.detailLines;
+  }
   return { lines, items, sections, eol };
+}
+
+/** 항목 줄들 — "- [ ] 제목 (~기한)" + 두 칸 들여쓴 설명 줄 (설명 안의 빈 줄은 공백 두 칸으로 이어 둔다) */
+function itemLines(title, detail, due, secDate, done) {
+  const out = ['- [' + (done ? 'x' : ' ') + '] ' + title + dueSuffix(due, secDate)];
+  if (detail) for (const d of String(detail).split(/\r?\n/)) out.push('  ' + d);
+  return out;
+}
+
+/** 입력 글 → [{ title, detail }] — split 이면 줄마다 하나, 아니면 첫 줄 제목 + 나머지 설명 */
+function toEntries(text, split) {
+  const strip = (t) => t.replace(/^\s*[-*]\s+(\[[ xX]\]\s*)?/, '').trim();
+  const raw = String(text || '').replace(/\s+$/, '').split(/\r?\n/);
+  if (split) return raw.map(strip).filter(Boolean).map((t) => ({ title: t, detail: '' }));
+  while (raw.length && !raw[0].trim()) raw.shift();
+  if (!raw.length) return [];
+  return [{ title: strip(raw[0]), detail: raw.slice(1).join('\n').replace(/^\s*\n/, '') }];
 }
 
 function load(file) {
@@ -178,9 +210,7 @@ function add(file, opts, retried) {
   if (typeof opts === 'string') opts = { text: opts, date: ymd(new Date()) };
   ensure(file);
   const { lines, sections, eol } = parse(readRaw(file));
-  const news = String(opts.text || '').split(/\r?\n/)
-    .map((t) => t.replace(/^\s*[-*]\s+(\[[ xX]\]\s*)?/, '').trim())
-    .filter(Boolean);
+  const news = toEntries(opts.text, opts.split);
   if (!news.length) return load(file);
 
   const backlog = !!opts.backlog || !opts.date;
@@ -225,10 +255,52 @@ function add(file, opts, retried) {
     while (at > sec.line + 1 && lines[at - 1].trim() === '') at--;
   }
   const secDate = backlog ? null : key;
-  lines.splice(at, 0, ...news.map((t) => '- [ ] ' + t + dueSuffix(opts.due, secDate)));
+  lines.splice(at, 0, ...news.flatMap((e) => itemLines(e.title, e.detail, opts.due, secDate, opts.done)));
   if (lines[lines.length - 1] !== '') lines.push('');
   write(file, lines, eol);
   return load(file);
+}
+
+/** 순번 + 제목으로 항목을 찾는다 (그 사이 파일이 바뀌어 순번이 밀렸으면 제목으로) */
+function findItem(items, i, text) {
+  return items.find((x) => x.i === i && x.text === text) || items.find((x) => x.text === text);
+}
+
+/** 항목 지우기 — 설명 줄까지 */
+function remove(file, i, text) {
+  const raw = readRaw(file);
+  if (raw == null) return load(file);
+  const { lines, items, eol } = parse(raw);
+  const it = findItem(items, i, text);
+  if (!it) return load(file);
+  lines.splice(it.line, it.lineEnd - it.line + 1);
+  write(file, lines, eol);
+  return load(file);
+}
+
+/**
+ * 항목 고치기 — opts = { text(첫 줄 제목 + 설명), date, backlog, category, due }
+ * 날짜 · 분류가 그대로면 그 자리에서 바꾸고, 바뀌었으면 빼서 새 자리에 넣는다. 체크 상태는 유지.
+ */
+function update(file, i, text, opts) {
+  const raw = readRaw(file);
+  if (raw == null) return load(file);
+  const { lines, items, eol } = parse(raw);
+  const it = findItem(items, i, text);
+  if (!it) return load(file);
+  const e = toEntries(opts.text, false)[0];
+  if (!e) return load(file);
+  const backlog = !!opts.backlog || !opts.date;
+  const samePlace = backlog === !!it.backlog && (backlog || opts.date === it.date) &&
+    ((opts.category || '').trim() || null) === (it.category || null);
+  if (samePlace) {
+    lines.splice(it.line, it.lineEnd - it.line + 1, ...itemLines(e.title, e.detail, opts.due, backlog ? null : opts.date, it.done));
+    write(file, lines, eol);
+    return load(file);
+  }
+  lines.splice(it.line, it.lineEnd - it.line + 1);
+  write(file, lines, eol);
+  return add(file, { ...opts, split: false, done: it.done });
 }
 
 function writeAndReload(file, lines, eol) {
@@ -257,7 +329,8 @@ function clearDone(file) {
   const raw = readRaw(file);
   if (raw == null) return load(file);
   const { lines, items, eol } = parse(raw);
-  const drop = new Set(items.filter((x) => x.done).map((x) => x.line));
+  const drop = new Set();
+  for (const x of items) if (x.done) for (let n = x.line; n <= x.lineEnd; n++) drop.add(n);   // 설명 줄까지
   write(file, lines.filter((_, n) => !drop.has(n)), eol);
   return load(file);
 }
@@ -280,4 +353,4 @@ function saveNotes(file, notes) {
   return notes;
 }
 
-module.exports = { parse, load, ensure, add, toggle, clearDone, loadNotes, saveNotes, categoryTime, ymd, TEMPLATE, BACKLOG_TITLE };
+module.exports = { parse, load, ensure, add, update, remove, toggle, clearDone, loadNotes, saveNotes, categoryTime, ymd, TEMPLATE, BACKLOG_TITLE };

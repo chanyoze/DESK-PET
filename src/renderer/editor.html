@@ -64,6 +64,7 @@
   </div>
   <textarea id="text" spellcheck="false"></textarea>
   <div class="row">
+    <label id="splitBox" style="display:none;color:#8f9bb3;font-size:12px"><input type="checkbox" id="split"> 줄마다 따로 (여러 개 한꺼번에)</label>
     <div id="colors" class="row"></div>
     <span class="spacer"></span>
     <span class="keys">Ctrl+Enter 저장 · Esc 취소</span>
@@ -83,6 +84,7 @@
         r.backlog = $('backlog').checked;
         r.date = r.backlog ? null : ($('date').value || null);
         r.category = $('category').value.trim() || null;
+        r.split = $('split').checked;
         const dd = $('dueDate').value, dt = $('dueTime').value;
         // 시각만 적으면 그 날짜의 시각 (언젠가면 오늘 날짜로)
         const d = new Date();
@@ -113,6 +115,12 @@
         $('date').disabled = !!t.backlog;
         $('backlog').onchange = () => { $('date').disabled = $('backlog').checked; };
         $('category').value = t.category || '';
+        if (!t.edit) $('splitBox').style.display = '';        // 수정할 땐 한 항목뿐
+        if (t.due) {                                          // 고칠 때 — 직접 적어 둔 기한만 채운다
+          const [dd, dt] = t.due.split(' ');
+          $('dueDate').value = dd || '';
+          $('dueTime').value = dt || '';
+        }
         // 등록한 분류 (버튼) — 직접 추가 · 삭제한다. 파일에만 있는 분류는 자동완성 목록에만
         let saved = (t.saved || []).slice();
         const renderCats = () => {

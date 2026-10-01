@@ -46,6 +46,9 @@ contextBridge.exposeInMainWorld('petAPI', {
   /** 입력 창을 띄워 할 일을 추가한다 (창이 닫히면 새 목록으로 풀린다) */
   todoAdd: (defaults) => ipcRenderer.invoke('todo:add', defaults),
   todoToggle: (i, text) => ipcRenderer.invoke('todo:toggle', i, text),
+  /** 입력 창에 지금 내용을 채워 고친다 · 지운다 (설명 줄까지) */
+  todoEdit: (i, text) => ipcRenderer.invoke('todo:edit', i, text),
+  todoRemove: (i, text) => ipcRenderer.invoke('todo:remove', i, text),
   todoClearDone: () => ipcRenderer.invoke('todo:clearDone'),
   /** todo.md 를 편집기로 연다 */
   todoOpen: () => ipcRenderer.invoke('todo:open'),
@@ -71,6 +74,14 @@ contextBridge.exposeInMainWorld('petAPI', {
   inboxCount: (n) => ipcRenderer.send('inbox:count', n),
   /** 윈도우 알림(토스트) 켜기 · 끄기 → 켜졌는지 */
   toastSet: (v) => ipcRenderer.invoke('toast:set', v),
+  // ── 업데이트 ──
+  /** 확인 창 (지금 업데이트 / 나중에 / 건너뛰기) */
+  updatePrompt: () => ipcRenderer.invoke('update:prompt'),
+  updateCheck: () => ipcRenderer.invoke('update:check'),
+  /** 새 버전 { version, current } */
+  onUpdate: (cb) => ipcRenderer.on('pet:update', (_e, u) => cb(u)),
+  /** 받는 중 % */
+  onUpdateProgress: (cb) => ipcRenderer.on('pet:update-progress', (_e, p) => cb(p)),
   /** 커서 놀이 'none' | 'chase' | 'flee' */
   setCursorMode: (m) => ipcRenderer.invoke('settings:setCursorMode', m),
   /** { available, on } — 개발 실행에선 available=false */

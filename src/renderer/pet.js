@@ -78,6 +78,7 @@
   let autoStart = null;   // 윈도우 시작 시 실행 { available, on }
   let claudeSessions = []; // Claude 세션 현황 (메뉴 열 때 갱신)
   let todoState = { items: [], recap: {} };   // 할 일 목록 (메인이 파일을 지켜보다가 보내 준다)
+  let updateAvail = null;  // 새 버전 (메인이 알려 준다)
   let sizeScale = 1;      // 크기 배율 (메뉴 체크 표시용 — 바꾸면 창이 새로 뜬다)
   let spineLoaded = false;
 
@@ -930,7 +931,7 @@
     rect: null,
 
     add(msg) {
-      const it = { id: 'a' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), at: Date.now(), card: msg.card, sid: msg.sid || '', read: false };
+      const it = { id: 'a' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), at: Date.now(), card: msg.card, sid: msg.sid || '', update: !!msg.update, read: false };
       msg.inboxId = it.id;
       this.items.unshift(it);
       if (this.items.length > INBOX_MAX) this.items.length = INBOX_MAX;
@@ -1103,6 +1104,8 @@
     const sections = [];
     const main = pets[0];
     const comp = pets[1];
+
+    if (updateAvail) sections.push({ items: [{ label: '⬆ 업데이트 v' + updateAvail + '…', value: 'act:update' }] });
 
     sections.push({
       title: pets.length > 1 ? '캐릭터 (이 아이)' : '캐릭터',
@@ -1302,7 +1305,8 @@
       if (arg === 'clear') { inbox.items = []; inbox.sync(); }
       else {
         const it = inbox.items.find((x) => x.id === arg);
-        if (it && it.sid) claude.focus(it.sid, p);
+        if (it && it.update) window.petAPI.updatePrompt();
+        else if (it && it.sid) claude.focus(it.sid, p);
       }
     } else if (kind === 'toast') {
       const on = await window.petAPI.toastSet(arg === 'on');
@@ -1326,6 +1330,7 @@
       else if (arg === 'special') p.setState('special', 3);
       else if (arg === 'hug') { const pr = hug.pair(); if (pr) hug.start(pr[0], pr[1]); }
       else if (arg === 'talk') p.chatter.prod();
+      else if (arg === 'update') window.petAPI.updatePrompt();
       else if (arg === 'inbox') setTimeout(() => inbox.open(), 0);   // 이 메뉴가 닫힌 뒤에 연다
       else if (arg === 'chat') {
         chatOn = !chatOn;
@@ -1508,9 +1513,11 @@
     if (bp) {
       // Claude 세션 말풍선이면 그 터미널로 간다
       const sid = bp.bubble.current && bp.bubble.current.sid;
+      const isUpdate = !!(bp.bubble.current && bp.bubble.current.update);   // 새 버전 카드면 업데이트 확인 창
       if (bp.bubble.current && bp.bubble.current.inboxId) inbox.read(bp.bubble.current.inboxId);
       bp.bubble.dismiss();
       if (sid) claude.focus(sid, bp);
+      else if (isUpdate) window.petAPI.updatePrompt();
       return;
     }
     const p = petAt(e.clientX, e.clientY);
@@ -1671,6 +1678,19 @@
       pets[0].say(msg);
     });
     window.petAPI.onClaude((ev) => claude.on(ev));
+    window.petAPI.onUpdate((u) => {
+      updateAvail = u.version;
+      if (!pets[0]) return;
+      const msg = { text: '새 버전 v' + u.version, mood: 'happy', ms: 15000, quiet: true, update: true,
+        card: { source: 'DeskPet', level: 'update', title: '새 버전 v' + u.version + ' — 눌러서 업데이트', line: '지금 v' + u.current, at: Date.now() } };
+      inbox.add(msg);
+      pets[0].say(msg);
+    });
+    window.petAPI.onUpdateProgress((pct) => {
+      const b = pets[0] && pets[0].bubble;
+      const t = b && b.current && b.current.card && b.current.card.level === 'update' && b.el.querySelector('.ac-title');
+      if (t) t.textContent = '받는 중… ' + pct + '%';
+    });
     window.petAPI.onTodo((st) => { todoState = st; window.PetNotes.setTodo(st); });
     window.petAPI.onRecap((r) => recap.on(r));
     todoState = await window.petAPI.todoGet();

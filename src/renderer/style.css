@@ -149,7 +149,6 @@ body {
   align-items: flex-start;
   gap: 7px;
   padding: 2px 0;
-  cursor: pointer;
 }
 
 .todo-item input {
@@ -164,6 +163,67 @@ body {
 
 .todo-text {
   flex: 1;
+}
+
+/* 설명 — 제목 아래 작은 글씨 */
+.todo-detail {
+  margin-top: 1px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: #9aa4ba;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.todo-text {
+  min-width: 0;
+  word-break: break-word;
+}
+
+/* 제목 아래 — 칩 · 수정/지우기 */
+.todo-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-height: 0;
+}
+
+.todo-meta:empty {
+  display: none;
+}
+
+.todo-meta .chip-due,
+.todo-meta .chip-date {
+  margin-top: 2px;
+}
+
+.todo-meta .todo-acts {
+  margin-left: auto;
+}
+
+/* 수정 · 지우기 — 마우스를 올린 줄에만 */
+.todo-acts {
+  display: none;
+  flex: none;
+  gap: 1px;
+}
+
+.todo-item:hover .todo-acts,
+.todo-item.arming .todo-acts {
+  display: flex;
+}
+
+.todo-acts .card-btn {
+  min-width: 18px;
+  height: 18px;
+  line-height: 18px;
+  font-size: 11.5px;
+}
+
+.todo-item:hover {
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 5px;
 }
 
 .todo-item.done .todo-text {
@@ -284,6 +344,7 @@ body {
 .alert-card[data-level='fail'] { --lv: #f56565; }
 .alert-card[data-level='due'] { --lv: #4299e1; }
 .alert-card[data-level='build'] { --lv: #9f7aea; }
+.alert-card[data-level='update'] { --lv: #38b2ac; }
 
 .ac-head {
   font-size: 10.5px;
