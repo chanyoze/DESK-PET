@@ -45,7 +45,10 @@
     .char { display: flex; align-items: center; gap: 8px; padding: 5px 8px; background: #161a26; border-radius: 7px; }
     .char.hidden .cname { color: #6b7590; }
     .char .cname { min-width: 90px; }
-    .char button.btn { padding: 3px 9px; font-size: 12px; }
+    .char { gap: 6px; }
+    .char button.btn { padding: 3px 7px; font-size: 11.5px; white-space: nowrap; flex: none; }
+    .char .badge, .char .note { white-space: nowrap; flex: none; }
+    .char .cname { min-width: 60px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     button.btn.primary { background: #3b5bdb; color: #fff; }
     button.btn.primary:hover { background: #4c6ef5; }
     #toast { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); background: #3b5bdb; color: #fff; padding: 6px 14px; border-radius: 8px; font-size: 12.5px; opacity: 0; transition: opacity .2s; pointer-events: none; }
@@ -153,7 +156,13 @@
         if (c.kind !== 'bundled') {
           acts.push(el('button', { class: 'btn', onclick: async () => { const r = await api.charsHide(c.id, !c.hidden); chars = r.list; render(); if (r.error) toast(r.error); } }, c.hidden ? '보이기' : '숨기기'));
         }
-        if (c.kind === 'made') {
+        if (c.kind !== 'bundled') {
+          acts.push(el('button', { class: 'btn', title: '.deskpet 파일로 — 지인에게 건네면 끌어다 놓기로 넣을 수 있어요', onclick: async () => {
+            const r = await api.charsExport(c.id, shareName());
+            if (r.ok) toast('내보냈어요 — 파일을 건네주면 돼요'); else if (r.error) toast(r.error);
+          } }, '내보내기'));
+        }
+        if (c.kind === 'made' || c.sharedBy != null) {
           acts.push(el('button', { class: 'btn danger', onclick: async (e) => {
             const b = e.currentTarget;
             if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = '지울까요?'; setTimeout(() => { if (b.isConnected) { delete b.dataset.armed; b.textContent = '지우기'; } }, 3000); return; }
@@ -162,15 +171,20 @@
         }
         box.append(el('div', { class: 'char' + (c.hidden ? ' hidden' : '') },
           el('span', { class: 'cname' }, c.name),
-          el('span', { class: 'badge' + (c.main ? ' ok' : '') }, c.main ? '주인공' : c.companion ? '동료' : KIND[c.kind] || c.kind),
+          el('span', { class: 'badge' + (c.main ? ' ok' : '') }, c.main ? '주인공' : c.companion ? '동료' : c.sharedBy != null ? '받은 것' : KIND[c.kind] || c.kind),
+          c.sharedBy ? el('span', { class: 'note' }, c.sharedBy + ' 님') : null,
           c.hidden ? el('span', { class: 'note' }, '숨김') : null,
           el('span', { class: 'spacer' }), ...acts));
       }
       add(box);
       add(el('div', { class: 'row' },
         el('button', { class: 'btn primary', onclick: () => api.makerOpen() }, '+ 내 그림으로 만들기'),
-        el('button', { class: 'btn', onclick: () => api.charsFolder() }, '캐릭터 폴더'),
-        el('span', { class: 'note' }, 'PNG · GIF 를 끌어다 놓으면 돼요')));
+        el('button', { class: 'btn', onclick: () => importChar() }, '가져오기 (.deskpet)'),
+        el('button', { class: 'btn', onclick: () => api.charsFolder() }, '캐릭터 폴더')));
+      const nameIn = el('input', { type: 'text', maxlength: 20, placeholder: '비우면 안 넣어요', value: shareName() });
+      nameIn.style.cssText = 'background:#0f121b;color:#e8ecf5;border:1px solid #3a4058;border-radius:6px;padding:4px 8px;font:inherit;width:140px';
+      nameIn.addEventListener('change', () => { try { localStorage.setItem('shareName', nameIn.value.trim()); } catch { /* 저장 못 해도 그만 */ } });
+      add(row('보내는 사람', nameIn, el('span', { class: 'note' }, '내보낼 때 같이 넣어요 · .deskpet 파일은 이 창에 끌어다 놓아도 돼요')));
       add(row('크기', seg(st.sizes.map((s) => [s.value, s.label]), st.size, (v) => set('size', v, '크기를 바꿨어요 — 캐릭터가 다시 떠요'))));
       if (st.displays.length > 1) {
         const sel = el('select', { onchange: (e) => set('display', Number(e.target.value), '모니터를 옮겼어요') },
@@ -243,6 +257,23 @@
         el('button', { class: 'btn', onclick: () => api.action('data') }, '설정 폴더')));
     }
 
+    // 캐릭터 주고받기
+    const shareName = () => { try { return localStorage.getItem('shareName') || ''; } catch { return ''; } };
+    async function importChar(bytes) {
+      const r = await api.charsImport(bytes);
+      if (r.canceled) return;
+      if (r.error) { toast('못 넣었어요: ' + r.error); return; }
+      chars = r.list;
+      render();
+      toast(r.name + (r.from ? ' (' + r.from + ' 님)' : '') + ' 넣었어요 — 목록에서 주인공으로');
+    }
+    window.addEventListener('dragover', (e) => e.preventDefault());
+    window.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      const f = [...e.dataTransfer.files].find((x) => /\.deskpet$/i.test(x.name));
+      if (!f) { if (e.dataTransfer.files.length) toast('.deskpet 파일만 넣을 수 있어요 — 그림은 "내 그림으로 만들기" 에'); return; }
+      importChar(new Uint8Array(await f.arrayBuffer()));
+    });
     const reload = () => Promise.all([api.get(), api.charsList()]).then(([s, c]) => { st = s; chars = c; render(); });
     reload();
     api.onChanged(() => { if (!capturing) reload(); });
