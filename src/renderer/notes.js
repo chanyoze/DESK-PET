@@ -102,14 +102,15 @@
   }
 
   // ── 할 일 카드 — 날짜별 보기 ─────────────────────────────
-  // view: 0 = 오늘, ±n = 며칠 앞뒤, 'backlog' = 언젠가
+  // view: 0 = 오늘, ±n = 며칠 앞뒤, 'backlog' = 언젠가, 'repeat' = 반복 틀
   let view = 0;
   const WEEK = ['일', '월', '화', '수', '목', '금', '토'];
   const pad = (n) => String(n).padStart(2, '0');
   const ymd = (d) => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
   const todayStr = () => ymd(new Date());
   const shift = (days) => { const d = new Date(); d.setDate(d.getDate() + days); return ymd(d); };
-  const viewDate = () => (view === 'backlog' ? null : shift(view));
+  const isDay = () => typeof view === 'number';
+  const viewDate = () => (isDay() ? shift(view) : null);
   const dueAt = (due) => new Date(due.replace(' ', 'T') + (due.length > 10 ? ':00' : 'T23:59:00')).getTime();
 
   function dateLabel(ds) {
@@ -121,7 +122,7 @@
 
   /** 카드에서 + 를 누르거나 메뉴에서 추가할 때의 기본값 — 지금 보고 있는 날짜 · 언젠가 */
   function addDefaults() {
-    return view === 'backlog' ? { backlog: true } : { date: viewDate() };
+    return view === 'backlog' ? { backlog: true } : view === 'repeat' ? { repeat: true } : { date: viewDate() };
   }
 
   /**
@@ -134,6 +135,7 @@
     const cb = document.createElement('input');
     cb.type = 'checkbox';
     cb.checked = it.done;
+    if (it.inRepeat) cb.title = '체크해 두면 쉬기 — 그날 목록에 넣지 않는다';
     cb.addEventListener('change', () => api().todoToggle(it.i, it.text).then(setTodo));
     const main = document.createElement('div');
     main.className = 'todo-text';
@@ -191,12 +193,18 @@
     return row;
   }
 
-  function group(body, title, items, tagOf) {
+  function group(body, title, items, tagOf, acts) {
     if (!items.length) return;
     if (title) {
       const h = document.createElement('div');
       h.className = 'todo-group';
       h.textContent = title;
+      if (acts) {
+        const a = document.createElement('span');
+        a.className = 'group-acts';
+        acts.forEach((b) => a.appendChild(b));
+        h.appendChild(a);
+      }
       body.appendChild(h);
     }
     // 안 끝낸 것 먼저
@@ -204,12 +212,30 @@
   }
 
   /** 분류별로 묶는다 — 분류 없는 것 먼저, 그다음 파일에 적힌 순서 */
-  function byCategory(body, items, afterOther) {
+  function byCategory(body, items, afterOther, tagOf) {
     const cats = [...new Set(items.map((x) => x.category).filter(Boolean))];
     // 위에 다른 묶음(밀린 것 · 분류)이 있으면 분류 없는 것에도 제목을 달아 섞여 보이지 않게
-    group(body, afterOther || cats.length ? '기타' : null, items.filter((x) => !x.category));
-    for (const c of cats) group(body, c, items.filter((x) => x.category === c));
+    group(body, afterOther || cats.length ? '기타' : null, items.filter((x) => !x.category), tagOf);
+    for (const c of cats) group(body, c, items.filter((x) => x.category === c), tagOf);
   }
+
+  /** 반복 틀의 칩 — "평일 17:30" */
+  const ruleTag = (x) => (x.repeat ? x.repeat.rule + (x.repeat.time ? ' ' + x.repeat.time : '') : '');
+
+  /** 밀린 것 한꺼번에 — 오늘로 · 언젠가로 · 끝냄 */
+  function lateActs(late) {
+    const refs = late.map((x) => ({ i: x.i, text: x.text }));
+    return [
+      button('오늘로', '밀린 것을 모두 오늘로 옮긴다', () => api().todoMove(refs, 'today').then(setTodo)),
+      button('언젠가로', '밀린 것을 모두 언젠가(기약 없음)로', () => api().todoMove(refs, 'backlog').then(setTodo)),
+      button('끝냄', '밀린 것을 모두 끝낸 걸로 체크', () => api().todoMove(refs, 'done').then(setTodo)),
+    ];
+  }
+
+  // 날짜 → 언젠가 → 반복 → 날짜
+  const NEXT_VIEW = { day: ['언젠가', '기약 없는 일 보기'], backlog: ['반복', '반복 할 일 틀 보기 (매일 · 평일 · 매주 …)'], repeat: ['날짜', '날짜별로 보기'] };
+  const viewKind = () => (isDay() ? 'day' : view);
+  const nextView = () => (isDay() ? 'backlog' : view === 'backlog' ? 'repeat' : 0);
 
   function buildTodo() {
     const el = document.createElement('div');
@@ -220,6 +246,9 @@
     if (view === 'backlog') {
       shown = items.filter((x) => x.backlog);
       title = '언젠가 · ' + shown.filter((x) => !x.done).length;
+    } else if (view === 'repeat') {
+      shown = items.filter((x) => x.inRepeat);
+      title = '반복 · ' + shown.filter((x) => !x.done).length;
     } else {
       const ds = viewDate();
       shown = items.filter((x) => !x.backlog && x.date === ds);
@@ -228,10 +257,10 @@
     const late = view === 0 ? items.filter((x) => !x.done && !x.backlog && x.date && x.date < today) : [];
 
     header(el, title, 'todo', [
-      button('◀', '전날', () => { view = view === 'backlog' ? 0 : view - 1; render(); }),
-      button('▶', '다음 날', () => { view = view === 'backlog' ? 0 : view + 1; render(); }),
-      button(view === 'backlog' ? '날짜' : '언젠가', view === 'backlog' ? '날짜별로 보기' : '기약 없는 일 보기', () => { view = view === 'backlog' ? 0 : 'backlog'; render(); }),
-      button('+', '할 일 추가 (지금 보는 날짜로)', () => api().todoAdd(addDefaults()).then(setTodo)),
+      button('◀', '전날', () => { view = isDay() ? view - 1 : 0; render(); }),
+      button('▶', '다음 날', () => { view = isDay() ? view + 1 : 0; render(); }),
+      button(NEXT_VIEW[viewKind()][0], NEXT_VIEW[viewKind()][1], () => { view = nextView(); render(); }),
+      button('+', view === 'repeat' ? '반복 할 일 추가' : '할 일 추가 (지금 보는 날짜로)', () => api().todoAdd(addDefaults()).then(setTodo)),
       button(todoCard.collapsed ? '▾' : '‒', todoCard.collapsed ? '펼치기' : '접기', () => {
         todoCard.collapsed = !todoCard.collapsed;
         api().notesSetTodoCard({ collapsed: todoCard.collapsed });
@@ -249,12 +278,15 @@
     if (!todoCard.collapsed) {
       const body = document.createElement('div');
       body.className = 'card-body todo-list';
-      group(body, late.length ? '밀린 것' : null, late, (x) => parseInt(x.date.slice(5, 7), 10) + '/' + parseInt(x.date.slice(8), 10));
-      byCategory(body, shown, late.length > 0);
+      group(body, late.length ? '밀린 것 ' + late.length : null, late, (x) => parseInt(x.date.slice(5, 7), 10) + '/' + parseInt(x.date.slice(8), 10),
+        late.length > 1 ? lateActs(late) : null);
+      byCategory(body, shown, late.length > 0, view === 'repeat' ? ruleTag : null);
       if (!late.length && !shown.length) {
         const empty = document.createElement('div');
         empty.className = 'todo-empty';
-        empty.textContent = view === 'backlog' ? '기약 없는 일은 여기에 — + 로 추가' : '비어 있어 — + 로 추가하면 정각마다 짚어 줄게';
+        empty.textContent = view === 'backlog' ? '기약 없는 일은 여기에 — + 로 추가'
+          : view === 'repeat' ? '매일 · 평일 · 매주 · 매월 할 일의 틀 — + 로 추가하면 그날 아침 오늘 목록에 들어가. 체크해 두면 쉬기'
+          : '비어 있어 — + 로 추가하면 정각마다 짚어 줄게';
         body.appendChild(empty);
       }
       if (!todoCard.h) body.style.maxHeight = TODO_SHOW * 26 + 'px';   // 크기를 정했으면 그 높이에 맞춘다

@@ -34,6 +34,10 @@ const BACKLOG = /^(언젠가|백로그|someday|backlog)(?=$|[\s(:·-])/i;
 const DUE = /\s*\(~\s*(?:((?:\d{4}-)?\d{1,2}-\d{1,2}))?\s*(\d{1,2}:\d{2})?\s*\)\s*$/;
 
 const BACKLOG_TITLE = '언젠가';
+const REPEAT_TITLE = '반복';
+const REPEAT = /^(반복|repeat)(?=$|[\s(:·-])/i;
+/** 반복 규칙 — (매일) (평일 09:00) (주말) (매주 월,수 17:30) (매월 1일) */
+const RULE = /\s*\((매일|평일|주말|매주\s*[월화수목금토일](?:\s*[,·]\s*[월화수목금토일])*|매월\s*\d{1,2}\s*일)(?:\s+(\d{1,2}:\d{2}))?\)\s*$/;
 /** 설명 줄 — 두 칸 이상 들여쓴 줄 (공백뿐인 줄도 설명 안의 빈 줄로 본다) */
 const CONT = /^ {2,}/;
 
@@ -101,7 +105,7 @@ function parse(raw) {
   const lines = raw.split(/\r?\n/);
   const items = [];
   const sections = [];
-  let date = null, backlog = true, category = null, sec = null;   // 제목 전 항목은 백로그
+  let date = null, backlog = true, repeat = false, category = null, sec = null;   // 제목 전 항목은 백로그
   let last = null;                                                  // 설명 줄을 붙일 바로 앞 항목
   lines.forEach((l, line) => {
     let m;
@@ -117,8 +121,9 @@ function parse(raw) {
       const dm = DATE.exec(t);
       date = dm ? dm[0] : null;
       backlog = !dm && BACKLOG.test(t);
+      repeat = !dm && !backlog && REPEAT.test(t);
       category = null;
-      sec = { key: dm ? dm[0] : t, date, backlog, line, cats: [] };
+      sec = { key: dm ? dm[0] : t, date, backlog, repeat, line, cats: [] };
       sections.push(sec);
       return;
     }
@@ -128,6 +133,18 @@ function parse(raw) {
       return;
     }
     if ((m = ITEM.exec(l)) && m[4].trim()) {
+      if (repeat) {
+        // 반복 틀 — 끝의 (규칙 시각) 을 떼어 둔다. 날짜 · 기한은 없다 (그날 할 일로 만들 때 붙는다)
+        const raw = m[4].trim();
+        const r = RULE.exec(raw);
+        last = {
+          i: items.length, line, lineEnd: line, text: (r ? raw.slice(0, r.index) : raw).trim(), done: m[2] !== ' ',
+          date: null, backlog: false, inRepeat: true, category, due: null, explicitDue: false, detailLines: [],
+          repeat: r ? { rule: r[1].replace(/\s+/g, ' ').trim(), time: r[2] ? pad(r[2].split(':')[0]) + ':' + r[2].split(':')[1] : null } : null,
+        };
+        items.push(last);
+        return;
+      }
       const { text, due, explicitDue } = splitDue(m[4].trim(), date, category);
       last = {
         i: items.length, line, lineEnd: line, text, done: m[2] !== ' ',
@@ -144,8 +161,9 @@ function parse(raw) {
 }
 
 /** 항목 줄들 — "- [ ] 제목 (~기한)" + 두 칸 들여쓴 설명 줄 (설명 안의 빈 줄은 공백 두 칸으로 이어 둔다) */
-function itemLines(title, detail, due, secDate, done) {
-  const out = ['- [' + (done ? 'x' : ' ') + '] ' + title + dueSuffix(due, secDate)];
+function itemLines(title, detail, due, secDate, done, repeat) {
+  const tail = repeat ? ' (' + repeat.rule + (repeat.time ? ' ' + repeat.time : '') + ')' : dueSuffix(due, secDate);
+  const out = ['- [' + (done ? 'x' : ' ') + '] ' + title + tail];
   if (detail) for (const d of String(detail).split(/\r?\n/)) out.push('  ' + d);
   return out;
 }
@@ -213,21 +231,25 @@ function add(file, opts, retried) {
   const news = toEntries(opts.text, opts.split);
   if (!news.length) return load(file);
 
-  const backlog = !!opts.backlog || !opts.date;
-  const key = backlog ? null : opts.date;
+  const repeat = opts.repeat ? normRule(opts.repeat) : null;          // { rule, time } — 반복 틀로 넣기
+  const backlog = !repeat && (!!opts.backlog || !opts.date);
+  const key = backlog || repeat ? null : opts.date;
   const cat = (opts.category || '').trim() || null;
 
-  // 1) 구역 찾기 · 만들기
-  let sec = sections.find((s) => (backlog ? s.backlog : s.date === key));
+  // 1) 구역 찾기 · 만들기 — 날짜 구역은 날짜순, 반복은 언젠가 앞, 언젠가는 맨 끝
+  let sec = sections.find((s) => (repeat ? s.repeat : backlog ? s.backlog : s.date === key));
   if (!sec) {
-    if (retried) throw new Error('할 일 구역을 만들지 못했다: ' + (backlog ? BACKLOG_TITLE : key));
-    const title = '## ' + (backlog ? BACKLOG_TITLE : key);
+    if (retried) throw new Error('할 일 구역을 만들지 못했다: ' + (repeat ? REPEAT_TITLE : backlog ? BACKLOG_TITLE : key));
+    const title = '## ' + (repeat ? REPEAT_TITLE : backlog ? BACKLOG_TITLE : key);
     let at;
     if (backlog) {
       at = lines.length;
+    } else if (repeat) {
+      const after = sections.find((s) => s.backlog);
+      at = after ? after.line : lines.length;
     } else {
-      // 날짜순 — 이 날짜보다 늦은 첫 날짜 구역이나 백로그 앞
-      const after = sections.find((s) => s.backlog || (s.date && s.date > key));
+      // 날짜순 — 이 날짜보다 늦은 첫 날짜 구역이나 반복 · 백로그 앞
+      const after = sections.find((s) => s.backlog || s.repeat || (s.date && s.date > key));
       at = after ? after.line : lines.length;
     }
     while (at > 0 && lines[at - 1].trim() === '') at--;
@@ -254,8 +276,8 @@ function add(file, opts, retried) {
     at = sec.cats.length ? sec.cats[0].line : blockEnd(lines, sec.line, false);
     while (at > sec.line + 1 && lines[at - 1].trim() === '') at--;
   }
-  const secDate = backlog ? null : key;
-  lines.splice(at, 0, ...news.flatMap((e) => itemLines(e.title, e.detail, opts.due, secDate, opts.done)));
+  const secDate = backlog || repeat ? null : key;
+  lines.splice(at, 0, ...news.flatMap((e) => itemLines(e.title, e.detail, repeat ? null : opts.due, secDate, opts.done, repeat)));
   if (lines[lines.length - 1] !== '') lines.push('');
   write(file, lines, eol);
   return load(file);
@@ -290,11 +312,13 @@ function update(file, i, text, opts) {
   if (!it) return load(file);
   const e = toEntries(opts.text, false)[0];
   if (!e) return load(file);
-  const backlog = !!opts.backlog || !opts.date;
-  const samePlace = backlog === !!it.backlog && (backlog || opts.date === it.date) &&
+  const repeat = opts.repeat ? normRule(opts.repeat) : null;
+  const backlog = !repeat && (!!opts.backlog || !opts.date);
+  const samePlace = !!repeat === !!it.inRepeat && backlog === !!it.backlog && (backlog || repeat || opts.date === it.date) &&
     ((opts.category || '').trim() || null) === (it.category || null);
   if (samePlace) {
-    lines.splice(it.line, it.lineEnd - it.line + 1, ...itemLines(e.title, e.detail, opts.due, backlog ? null : opts.date, it.done));
+    lines.splice(it.line, it.lineEnd - it.line + 1,
+      ...itemLines(e.title, e.detail, repeat ? null : opts.due, backlog || repeat ? null : opts.date, it.done, repeat));
     write(file, lines, eol);
     return load(file);
   }
@@ -303,9 +327,120 @@ function update(file, i, text, opts) {
   return add(file, { ...opts, split: false, done: it.done });
 }
 
+// ── 반복 할 일 ─────────────────────────────────────────────
+/**
+ * 반복 규칙 다듬기 — "매주 월, 수" · { rule, time } 둘 다 받는다. 알 수 없는 규칙이면 null
+ *   매일 · 평일 · 주말 · 매주 월,수 · 매월 1일  (+ 시각 HH:MM)
+ */
+function normRule(r) {
+  const rule = typeof r === 'string' ? r : r && r.rule;
+  const time = typeof r === 'object' && r ? r.time : null;
+  const m = RULE.exec(' (' + String(rule || '').trim() + (time ? ' ' + time : '') + ')');
+  if (!m) return null;
+  const t = m[2] ? pad(m[2].split(':')[0]) + ':' + m[2].split(':')[1] : null;
+  const clean = m[1].replace(/\s*[,·]\s*/g, ',').replace(/^매주\s*/, '매주 ').replace(/^매월\s*(\d+)\s*일$/, '매월 $1일');
+  return { rule: clean, time: t };
+}
+
+const WEEK = ['일', '월', '화', '수', '목', '금', '토'];
+
+/** 이 날짜(Date)에 해당하는 규칙인지 */
+function ruleMatches(rule, d) {
+  const dow = d.getDay();
+  if (rule === '매일') return true;
+  if (rule === '평일') return dow >= 1 && dow <= 5;
+  if (rule === '주말') return dow === 0 || dow === 6;
+  let m = /^매주 (.+)$/.exec(rule);
+  if (m) return m[1].split(',').map((x) => x.trim()).includes(WEEK[dow]);
+  m = /^매월 (\d+)일$/.exec(rule);
+  if (m) {
+    const want = parseInt(m[1], 10);
+    const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+    return d.getDate() === Math.min(want, lastDay);      // 31일 규칙은 짧은 달엔 말일에
+  }
+  return false;
+}
+
+/**
+ * 그날 할 일 만들기 — 반복 틀 중 그날에 해당하는 것을 그 날짜 구역에 넣는다.
+ *  - 이미 그날 같은 제목이 있으면 넣지 않는다
+ *  - made: 그날 이미 만든 제목들 (설정에 둔다) — 사용자가 지운 걸 다시 만들지 않으려고
+ *  - 틀을 체크([x])해 두면 쉬는 중으로 보고 만들지 않는다
+ * @returns { added: [제목], made: [제목] }
+ */
+function materialize(file, d, made) {
+  const raw = readRaw(file);
+  const done = new Set(made || []);
+  if (raw == null) return { added: [], made: [...done] };
+  const { items } = parse(raw);
+  const key = ymd(d);
+  const added = [];
+  for (const t of items.filter((x) => x.inRepeat && x.repeat && !x.done && ruleMatches(x.repeat.rule, d))) {
+    if (done.has(t.text)) continue;
+    done.add(t.text);
+    const fresh = load(file).items;
+    if (fresh.some((x) => x.date === key && x.text === t.text)) continue;
+    add(file, {
+      text: t.text + (t.detail ? '\n' + t.detail : ''), date: key, category: t.category,
+      due: t.repeat.time ? key + ' ' + t.repeat.time : null,
+    });
+    added.push(t.text);
+  }
+  return { added, made: [...done] };
+}
+
+/**
+ * 여러 항목을 한 번에 — target: { date } | { backlog: true } | { done: true }
+ * 밀린 할 일 정리에 쓴다. 옮길 땐 분류 · 설명은 그대로, 같은 날짜에 붙어 있던 시각 기한은 새 날짜로 옮긴다.
+ */
+function moveItems(file, refs, target) {
+  let n = 0;
+  const from = new Set();
+  for (const ref of refs || []) {
+    const raw = readRaw(file);
+    if (raw == null) break;
+    const { items } = parse(raw);
+    const it = findItem(items, ref.i, ref.text);
+    if (!it) continue;
+    if (target.done) {
+      if (!it.done) { toggle(file, it.i, it.text, true); n++; }
+      continue;
+    }
+    let due = it.explicitDue ? it.due : null;
+    if (due && target.date && it.date && due.startsWith(it.date + ' ')) due = target.date + due.slice(10);
+    if (due && target.backlog && it.date && due.startsWith(it.date)) due = null;
+    remove(file, it.i, it.text);
+    if (it.date) from.add(it.date);
+    n++;
+    // 반복으로 그날 이미 만들어진 같은 일이 있으면 합친다 (두 줄로 늘지 않게)
+    if (target.date && items.some((x) => x.date === target.date && x.text === it.text && x !== it)) continue;
+    add(file, { text: it.text + (it.detail ? '\n' + it.detail : ''), date: target.date || null, backlog: !!target.backlog, category: it.category, due });
+  }
+  dropEmptyDates(file, [...from].filter((d) => d !== target.date));
+  return { ...load(file), moved: n };
+}
+
 function writeAndReload(file, lines, eol) {
   write(file, lines, eol);
   return file;
+}
+
+/** 옮기고 나서 텅 빈 날짜 구역(분류 제목 · 빈 줄만 남은)은 지운다 — 옮겨 온 날짜만 */
+function dropEmptyDates(file, dates) {
+  if (!dates.length) return;
+  const raw = readRaw(file);
+  if (raw == null) return;
+  const { lines, eol } = parse(raw);
+  const want = new Set(dates);
+  for (let n = lines.length - 1; n >= 0; n--) {
+    const h = H2.exec(lines[n]);
+    const dm = h && DATE.exec(h[1]);
+    if (!dm || !want.has(dm[0])) continue;
+    let end = n + 1;
+    while (end < lines.length && !H2.test(lines[end])) end++;
+    if (lines.slice(n + 1, end).every((l) => !l.trim() || H3.test(l))) lines.splice(n, end - n);
+  }
+  write(file, lines, eol);
 }
 
 /**
@@ -353,4 +488,4 @@ function saveNotes(file, notes) {
   return notes;
 }
 
-module.exports = { parse, load, ensure, add, update, remove, toggle, clearDone, loadNotes, saveNotes, categoryTime, ymd, TEMPLATE, BACKLOG_TITLE };
+module.exports = { parse, load, ensure, add, update, remove, toggle, clearDone, materialize, moveItems, normRule, ruleMatches, REPEAT_TITLE, loadNotes, saveNotes, categoryTime, ymd, TEMPLATE, BACKLOG_TITLE };

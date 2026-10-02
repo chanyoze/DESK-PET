@@ -6,7 +6,7 @@
  *
  *   open({ display, mode, title, text, color, hint, todo }) → Promise<{ text, color, … } | null>  (취소면 null)
  *   mode 'todo' 면 todo = { date, backlog, category, categories } 를 기본값으로 날짜 · 분류 · 기한 칸이 붙고
- *   결과에 { date, backlog, category, due } 가 더해진다
+ *   결과에 { date, backlog, category, due, repeat? } 가 더해진다 (todo.repeat = { rule, time } 이면 반복 틀로 시작)
  */
 const { BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
@@ -19,7 +19,7 @@ function open(opts) {
     current.win.focus();
     return Promise.resolve(null);
   }
-  const W = opts.mode === 'todo' ? 520 : 420, H = opts.mode === 'note' ? 330 : opts.mode === 'todo' ? 480 : 300;
+  const W = opts.mode === 'todo' ? 520 : 420, H = opts.mode === 'note' ? 330 : opts.mode === 'todo' ? 520 : 300;
   const wa = opts.display.workArea;
   const win = new BrowserWindow({
     width: W,

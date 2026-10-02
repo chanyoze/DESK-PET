@@ -39,6 +39,13 @@
     .presets .pre:hover .del { visibility: visible; }
     .presets .del:hover { color: #ff9c9c; }
     .presets .add { background: transparent; border: 1px dashed #4a5370; color: #8f9bb3; }
+    select {
+      background: #0f121b; color: #e8ecf5; border: 1px solid #3a4058; border-radius: 6px;
+      padding: 5px 7px; font: inherit; font-size: 13px; color-scheme: dark;
+    }
+    #weekdays button { background: #2f3549; color: #c3cce0; border: 0; border-radius: 50%; width: 26px; height: 26px; font: inherit; font-size: 12px; cursor: pointer; padding: 0; }
+    #weekdays button.on { background: #3b5bdb; color: #fff; }
+    #monthDay { width: 52px; flex: none; }
   </style>
 </head>
 <body>
@@ -50,16 +57,29 @@
       <label style="min-width:0"><input type="checkbox" id="backlog"> 언젠가 (기약 없음)</label>
     </div>
     <div class="row">
+      <label>반복</label>
+      <select id="repeat">
+        <option value="">안 함</option>
+        <option value="매일">매일</option>
+        <option value="평일">평일 (월~금)</option>
+        <option value="주말">주말</option>
+        <option value="매주">매주 …</option>
+        <option value="매월">매월 …</option>
+      </select>
+      <span id="weekdays" class="row" style="display:none;gap:4px"></span>
+      <span id="monthBox" class="row" style="display:none;gap:4px"><input type="text" id="monthDay" inputmode="numeric" maxlength="2"> 일</span>
+    </div>
+    <div class="row">
       <label>분류</label>
       <input type="text" id="category" list="cats" placeholder="없으면 비워 두기 — 오전 · 오후 · 3시 전까지 …">
       <datalist id="cats"></datalist>
     </div>
     <div class="row presets" id="presets"><label></label></div>
     <div class="row">
-      <label>기한</label>
+      <label id="dueLabel">기한</label>
       <input type="date" id="dueDate">
       <input type="time" id="dueTime">
-      <span class="keys">비우면 없음 · 분류 이름에 시각이 있으면 그 시각</span>
+      <span class="keys" id="dueKeys">비우면 없음 · 분류 이름에 시각이 있으면 그 시각</span>
     </div>
   </div>
   <textarea id="text" spellcheck="false"></textarea>
@@ -90,8 +110,39 @@
         const d = new Date();
         const today = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
         r.due = dd || dt ? (dd || r.date || today) + (dt ? ' ' + dt : '') : null;
+        const rule = repeatRule();
+        if ($('repeat').value && !rule) {                     // 매주인데 요일이 없거나 매월인데 날짜가 없으면 저장하지 않는다
+          $('hint').textContent = $('repeat').value === '매주' ? '반복할 요일을 하나 이상 골라 주세요' : '매월 며칠인지 1~31 로 적어 주세요';
+          $('hint').style.color = '#ffb36b';
+          ($('repeat').value === '매월' ? $('monthDay') : $('weekdays')).scrollIntoView();
+          return;
+        }
+        if (rule) {                                           // 반복 틀 — 날짜 · 기한 대신 규칙 + 시각
+          r.repeat = { rule, time: dt || null };
+          r.date = null; r.backlog = false; r.due = null; r.split = false;
+        }
       }
       window.editorAPI.done(r);
+    };
+    // 반복 규칙 — 매주는 요일 버튼, 매월은 날짜 칸
+    const WEEK = ['월', '화', '수', '목', '금', '토', '일'];
+    const days = new Set();
+    const repeatRule = () => {
+      const v = $('repeat').value;
+      if (v === '매주') return days.size ? '매주 ' + WEEK.filter((d) => days.has(d)).join(',') : null;
+      if (v === '매월') { const n = parseInt($('monthDay').value, 10); return n >= 1 && n <= 31 ? '매월 ' + n + '일' : null; }
+      return v || null;
+    };
+    const syncRepeat = () => {
+      const v = $('repeat').value;
+      $('weekdays').style.display = v === '매주' ? 'flex' : 'none';
+      $('monthBox').style.display = v === '매월' ? 'flex' : 'none';
+      $('date').disabled = !!v || $('backlog').checked;
+      $('backlog').disabled = !!v;
+      $('dueDate').style.display = v ? 'none' : '';
+      $('dueLabel').textContent = v ? '시각' : '기한';
+      $('dueKeys').textContent = v ? '그날 넣을 때 붙는 기한 시각 · 비우면 없음' : '비우면 없음 · 분류 이름에 시각이 있으면 그 시각';
+      $('splitBox').style.visibility = v ? 'hidden' : '';
     };
     const cancel = () => window.editorAPI.done(null);
     document.getElementById('save').onclick = save;
@@ -113,7 +164,22 @@
         $('date').value = t.date || '';
         $('backlog').checked = !!t.backlog;
         $('date').disabled = !!t.backlog;
-        $('backlog').onchange = () => { $('date').disabled = $('backlog').checked; };
+        $('backlog').onchange = syncRepeat;
+        for (const d of WEEK) {
+          const b = document.createElement('button');
+          b.textContent = d;
+          b.onclick = () => { days.has(d) ? days.delete(d) : days.add(d); b.classList.toggle('on', days.has(d)); };
+          $('weekdays').appendChild(b);
+        }
+        $('repeat').onchange = syncRepeat;
+        if (t.repeat) {                                      // 반복 틀 — 처음부터 반복으로 (카드의 반복 보기 · 틀 고치기)
+          const m = /^(매주|매월) (.+)$/.exec(t.repeat.rule || '');
+          $('repeat').value = m ? m[1] : t.repeat.rule || '매일';
+          if (m && m[1] === '매주') m[2].split(',').forEach((d) => days.add(d));
+          if (m && m[1] === '매월') $('monthDay').value = parseInt(m[2], 10);
+          $('weekdays').querySelectorAll('button').forEach((b) => b.classList.toggle('on', days.has(b.textContent)));
+          $('dueTime').value = t.repeat.time || '';
+        }
         $('category').value = t.category || '';
         if (!t.edit) $('splitBox').style.display = '';        // 수정할 땐 한 항목뿐
         if (t.due) {                                          // 고칠 때 — 직접 적어 둔 기한만 채운다
@@ -165,6 +231,7 @@
           $('presets').appendChild(add);
         };
         renderCats();
+        syncRepeat();
       }
       if (o.mode === 'note') {
         const box = document.getElementById('colors');
