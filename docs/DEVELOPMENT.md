@@ -58,6 +58,7 @@ src/
   notes-store.js           todo.md(일자별 · 분류 · 언젠가 · 반복 · 기한 · 설명) 읽고 쓰기 · 반복 만들기 · 한꺼번에 옮기기 · notes.json (electron 없이 시험 가능)
   editor-window.js         글 입력 창 (투명 창은 글자를 못 받아서 따로 띄운다) — preload-editor.js
   settings-window.js       설정 창 (renderer/settings.html · preload-settings.js) — main.js 의 prefs:get / prefs:set
+  char-package.js          캐릭터 꾸러미(.deskpet) 묶기 · 검사 · 풀기 (electron 없이 시험 가능)
   maker-window.js          내 그림으로 캐릭터 만들기 창 (renderer/maker.html · preload-maker.js) — main.js 의 maker:* · chars:*
   palette-window.js        도구 팔레트 창 — 빠른 메모 · 클립보드 기록 · 바로가기 (renderer/palette.html · preload-palette.js)
   clipboard-history.js     클립보드 기록 (메모리에만, 📌 고정만 clipboard-pins.json) — Electron 44 는 클립보드가 Promise
@@ -314,6 +315,18 @@ npm run extract-rpgmv -- "<게임 폴더>" tools/recipes/termina/samarie.json --
 - 매니페스트에 `maker: 1` · `makerOpts`(방향 · 배경 · 도트 · 속도 · 쓴 칸)를 남겨 **고치기** 때 시트를 칸으로 다시 잘라 불러온다
 - 설정 창 캐릭터 목록 = `chars:admin` — 종류 bundled · downloaded(CREDITS.txt 있음) · made(`my-`) · user.
   숨기기는 `"hidden": true` (받은 것은 지우면 다시 받으므로 숨기기만), 지우기는 made 만, 나와 있는 캐릭터는 둘 다 막는다
+
+## 캐릭터 꾸러미 (.deskpet)
+
+`src/char-package.js` (electron 없음) — 캐릭터 폴더 ↔ 파일 하나. IPC `chars:export` · `chars:import` (설정 창).
+
+- 형식: `gzip( JSON { format: 'deskpet-character', version: 1, id, name, from, createdAt, files: { 상대경로: base64 } } )`.
+  zip 라이브러리 없이 node 기본 `zlib` 만 쓴다. png 는 이미 압축이라 크기는 원본과 비슷 (늪짱이 76KB → 60KB)
+- 받을 때 검사 (`unpack`): 형식 · 버전, 파일은 json · png · jpg · webp · skel · atlas · txt 만, 경로는 폴더 안쪽만(절대 · `..` · 역슬래시 금지),
+  300개 · 풀어서 120MB 상한, `character.json` 은 sprite · spine 만, 매니페스트가 가리키는 그림이 다 있어야
+- 설치 (`install`): `.part` 에 쓰고 옮긴다, 매니페스트에 `sharedBy`(보낸 사람 또는 true) — 목록에 "받은 것 · ○○ 님", 지우기 허용
+- 같은 id 가 있으면 덮어쓰기 · 따로 추가(내가 만든 형식 `my-` 면 새 `my-` id 라 고치기가 된다) · 취소
+- 시험: 위험한 꾸러미 9종(경로 탈출 · 절대 경로 · exe · js · 그림 빠짐 · 다른 형식 · parts · 그냥 png · 미래 버전) 거절 확인
 
 ## 포켓몬 (불가사의 던전 스타일 스프라이트)
 

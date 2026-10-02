@@ -19,6 +19,7 @@ const shortcutsStore = require('./shortcuts-store');
 const palette = require('./palette-window');
 const settingsWindow = require('./settings-window');
 const makerWindow = require('./maker-window');
+const charPackage = require('./char-package');
 
 const DEV = process.argv.includes('--dev');
 
@@ -1437,7 +1438,7 @@ ipcMain.handle('prefs:action', async (_e, name) => {
 /**
  * 종류: bundled 앱에 든 것 · downloaded 받아 온 것(포켓몬 등) · made 내 그림으로 만든 것(id 가 my-) · user 직접 넣은 폴더
  * 숨기기는 사용자 폴더 캐릭터의 character.json 에 "hidden": true (지우지 않는다 — 받아 온 건 지우면 다음에 켤 때 다시 받는다).
- * 지우기는 내가 만든 것만.
+ * 지우기는 내가 만든 것 · 받은 것(.deskpet)만.
  */
 const MADE_ID = /^my-[a-z0-9]{4,24}$/;
 const SHEET_NAME = /^[a-z][a-z0-9]{0,15}$/;
@@ -1458,6 +1459,7 @@ function charsAdmin() {
         : fs.existsSync(path.join(dir, 'CREDITS.txt')) ? 'downloaded' : 'user';
       seen.set(e.name, {
         id: e.name, name: m.name || e.name, renderer: m.renderer || 'parts', kind, hidden: !!m.hidden,
+        sharedBy: m.sharedBy ? (m.sharedBy === true ? '' : String(m.sharedBy)) : null,
         main: e.name === (currentCharacter || cfg.character), companion: e.name === cfg.companion,
       });
     }
@@ -1481,7 +1483,7 @@ ipcMain.handle('chars:hide', (_e, id, hidden) => {
 });
 ipcMain.handle('chars:remove', (_e, id) => {
   const c = charsAdmin().find((x) => x.id === id);
-  if (!c || c.kind !== 'made') return { error: '내가 만든 캐릭터만 지울 수 있어요', list: charsAdmin() };
+  if (!c || (c.kind !== 'made' && c.sharedBy == null)) return { error: '내가 만들었거나 받은 캐릭터만 지울 수 있어요', list: charsAdmin() };
   if (c.main || c.companion) return { error: '지금 나와 있는 캐릭터는 지울 수 없어요 — 먼저 다른 캐릭터로 바꿔 주세요', list: charsAdmin() };
   fs.rmSync(path.join(userCharDir(), id), { recursive: true, force: true });
   console.log('[chars] 지움', id);
@@ -1496,6 +1498,66 @@ ipcMain.handle('chars:use', (_e, id) => {
   settings.save(patch);
   win?.reload();
   return charsAdmin();
+});
+
+// 캐릭터 주고받기 (.deskpet — char-package.js)
+ipcMain.handle('chars:export', async (_e, id, from) => {
+  const c = charsAdmin().find((x) => x.id === id);
+  const dir = c && charPath(id);
+  if (!dir) return { error: '캐릭터를 찾을 수 없어요' };
+  const parent = settingsWindow.window() || undefined;
+  const r = await dialog.showSaveDialog(parent, {
+    title: c.name + ' 내보내기',
+    defaultPath: path.join(app.getPath('desktop'), c.name.replace(/[\\/:*?"<>|]/g, '_') + '.deskpet'),
+    filters: [{ name: 'DeskPet 캐릭터', extensions: ['deskpet'] }],
+  });
+  if (r.canceled || !r.filePath) return { canceled: true };
+  try {
+    fs.writeFileSync(r.filePath, charPackage.pack(dir, { id, from }));
+    console.log('[chars] 내보냄', id);
+    shell.showItemInFolder(r.filePath);
+    return { ok: true, path: r.filePath };
+  } catch (e) {
+    return { error: e.message };
+  }
+});
+/** 가져오기 — bytes 가 없으면 파일 고르기 창 (끌어다 놓기는 창이 내용을 읽어 넘긴다) */
+ipcMain.handle('chars:import', async (_e, bytes) => {
+  const parent = settingsWindow.window() || undefined;
+  let buf;
+  if (bytes) buf = Buffer.from(bytes);
+  else {
+    const r = await dialog.showOpenDialog(parent, { title: '캐릭터 가져오기', properties: ['openFile'], filters: [{ name: 'DeskPet 캐릭터', extensions: ['deskpet'] }] });
+    if (r.canceled || !r.filePaths.length) return { canceled: true };
+    buf = fs.readFileSync(r.filePaths[0]);
+  }
+  try {
+    const pkg = charPackage.unpack(buf);
+    let id = pkg.id;
+    if (charPath(id)) {
+      const a = await dialog.showMessageBox(parent, {
+        type: 'question', title: '캐릭터 가져오기', message: '"' + pkg.name + '" 이(가) 이미 있어요',
+        detail: '덮어쓰면 지금 있는 것이 받은 것으로 바뀌어요.', buttons: ['덮어쓰기', '따로 추가', '취소'], defaultId: 1, cancelId: 2, noLink: true,
+      });
+      if (a.response === 2) return { canceled: true };
+      if (a.response === 1) {
+        // 따로 추가 — 내가 만든 형식(my-)이면 새 my- 아이디로 (그래야 고치기가 된다)
+        let n = 2;
+        const next = () => (MADE_ID.test(pkg.id) ? 'my-' + (Date.now() + n).toString(36) : pkg.id.slice(0, 36) + '-' + n);
+        for (id = next(); charPath(id); n++) id = next();
+        const same = charsAdmin().filter((x) => x.name === pkg.name || x.name.startsWith(pkg.name + ' (')).length;
+        pkg.manifest = { ...pkg.manifest, name: pkg.name + ' (' + (same + 1) + ')' };
+      }
+    }
+    charPackage.install(pkg, path.join(userCharDir(), id));
+    console.log('[chars] 가져옴', id, pkg.from ? '(' + pkg.from + ')' : '');
+    const cfg = settings.load();
+    if (id === (currentCharacter || cfg.character) || id === cfg.companion) win?.reload();     // 나와 있는 걸 덮어썼으면 바로
+    return { ok: true, id, name: pkg.manifest.name || pkg.name, from: pkg.from, list: charsAdmin() };
+  } catch (e) {
+    console.error('[chars] 가져오기 실패:', e.message);
+    return { error: e.message };
+  }
 });
 
 // 만들기 창
