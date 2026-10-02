@@ -1129,48 +1129,19 @@
   //  메뉴
   // ════════════════════════════════════════════════════════════
   const MODE_LABEL = { knife: '칼', shotgun: '산탄총', pistol: '권총' };
+  let hotkeyMap = {};       // { memo, clip, links } — 메뉴에 단축키를 같이 보여 준다
+  const hotkeyText = (tab) => (hotkeyMap[tab] || '').replace('CommandOrControl', 'Ctrl').replace('Super', 'Win');
 
+  /**
+   * 좌클릭 메뉴 — 자주 누르는 것만. 크기 · 분위기 · 혼잣말 · 커서 · 정각 알림 · Claude 연결 · 자동 시작 같은
+   * 한 번 정하면 그만인 설정은 "설정…" 창으로 옮겼다 (메뉴가 너무 길어져서).
+   */
   function buildMenu(p) {
     const sections = [];
     const main = pets[0];
     const comp = pets[1];
 
     if (updateAvail) sections.push({ items: [{ label: '⬆ 업데이트 v' + updateAvail + '…', value: 'act:update' }] });
-
-    sections.push({
-      title: pets.length > 1 ? '캐릭터 (이 아이)' : '캐릭터',
-      fold: 'char',
-      items: roster.map((c) => ({ label: c.name, value: 'char:' + c.id, checked: c.id === p.id })),
-    });
-
-    // 함께 다니기 — 주인공 말고 한 명 더
-    sections.push({
-      title: '함께 다니기',
-      fold: 'comp',
-      items: [{ label: '혼자', value: 'comp:', checked: !comp }].concat(
-        roster.filter((c) => c.id !== main.id)
-          .map((c) => ({ label: c.name, value: 'comp:' + c.id, checked: !!comp && comp.id === c.id }))),
-    });
-
-    // 모니터가 둘 이상일 때만
-    if (displays.length > 1) {
-      sections.push({
-        title: '모니터',
-        fold: 'disp',
-        items: displays.map((d) => ({ label: d.label, value: 'disp:' + d.id, checked: d.current }))
-          .concat([{ label: '지금 마우스가 있는 모니터로', value: 'disp:cursor' }]),
-      });
-    }
-
-    sections.push({
-      title: '크기',
-      fold: 'size',
-      items: [
-        { label: '작게', value: 'size:0.6', checked: sizeScale === 0.6 },
-        { label: '보통', value: 'size:1', checked: sizeScale === 1 },
-        { label: '크게', value: 'size:1.45', checked: sizeScale === 1.45 },
-      ],
-    });
 
     const acts = [{ label: '쓰다듬기', value: 'act:pet' }];
     if (p.view && p.view.has(p.animFor('special'))) acts.push({ label: '특별 동작', value: 'act:special' });
@@ -1180,18 +1151,50 @@
     acts.push({ label: '가운데로 부르기', value: 'act:recall' });
     sections.push({ title: '동작', items: acts });
 
-    // 분위기 — 원작처럼 대사가 있는 캐릭터가 하나라도 있을 때만
-    if (pets.some((q) => q.character && (q.character.linesDark || q.character.dialoguesDark))) {
-      sections.push({
-        title: '분위기',
-        fold: 'tone',
-        items: [
-          { label: '가볍게', value: 'tone:light', checked: tone !== 'dark' },
-          { label: '원작처럼', value: 'tone:dark', checked: tone === 'dark' },
-        ],
-      });
+    // 할 일 — todo.md (메모장 · Claude Code 로 고쳐도 된다)
+    const open = todoState.items.filter((x) => !x.done && !x.inRepeat).length;
+    const tItems = [
+      { label: '할 일 추가…', value: 'todo:add' },
+      { label: '지금 정리해줘', value: 'todo:recap' },
+      { label: '메모 붙이기…', value: 'todo:note' },
+    ];
+    if (!window.PetNotes.todoShown) tItems.push({ label: '할 일 카드 보이기', value: 'todo:card' });
+    if (todoState.items.some((x) => x.done && !x.inRepeat)) tItems.push({ label: '끝낸 것 지우기', value: 'todo:clear' });
+    sections.push({ title: '할 일' + (open ? ' · ' + open + '개 남음' : ''), items: tItems });
+
+    // 도구 — 빠른 메모 · 클립보드 기록 · 바로가기 (전역 단축키로도 연다)
+    sections.push({
+      title: '도구',
+      fold: 'tools',
+      items: [
+        { label: ('빠른 메모  ' + hotkeyText('memo')).trim(), value: 'tool:memo' },
+        { label: ('클립보드 기록  ' + hotkeyText('clip')).trim(), value: 'tool:clip' },
+        { label: ('바로가기  ' + hotkeyText('links')).trim(), value: 'tool:links' },
+      ],
+    });
+
+    // Claude Code — 연결 · 끊기는 설정 창에서. 여기는 세션으로 가기 · 놓친 알림만
+    const cs = claudeState || {};
+    if (cs.connected && claudeSessions.length) {
+      sections.push({ title: 'Claude 세션 (눌러서 그 창으로)', items: claude.menuItems(claudeSessions) });
+    }
+    if (inbox.items.length) {
+      sections.push({ items: [{ label: '최근 알림 보기' + (inbox.unread() ? ' (' + inbox.unread() + ')' : ''), value: 'act:inbox' }] });
     }
 
+    sections.push({
+      title: pets.length > 1 ? '캐릭터 (이 아이)' : '캐릭터',
+      fold: 'char',
+      items: roster.map((c) => ({ label: c.name, value: 'char:' + c.id, checked: c.id === p.id })),
+    });
+    // 함께 다니기 — 주인공 말고 한 명 더
+    sections.push({
+      title: '함께 다니기',
+      fold: 'comp',
+      items: [{ label: '혼자', value: 'comp:', checked: !comp }].concat(
+        roster.filter((c) => c.id !== main.id)
+          .map((c) => ({ label: c.name, value: 'comp:' + c.id, checked: !!comp && comp.id === c.id }))),
+    });
     const modes = modesOf(p.character);
     if (modes.length) {
       sections.push({
@@ -1203,63 +1206,6 @@
     }
 
     sections.push({
-      items: [{ label: '혼잣말', value: 'act:chat', checked: chatOn }, { label: '새로 바뀐 것 보기', value: 'act:whatsnew' }],
-    });
-
-    // 할 일 — todo.md (메모장 · Claude Code 로 고쳐도 된다)
-    const open = todoState.items.filter((x) => !x.done).length;
-    const tItems = [
-      { label: '할 일 추가…', value: 'todo:add' },
-      { label: '지금 정리해줘', value: 'todo:recap' },
-      { label: 'todo.md 열기', value: 'todo:open' },
-      { label: '메모 붙이기…', value: 'todo:note' },
-    ];
-    if (!window.PetNotes.todoShown) tItems.push({ label: '할 일 카드 보이기', value: 'todo:card' });
-    tItems.push({ label: '메모 · 카드 숨기기', value: 'todo:hide', checked: window.PetNotes.hidden });
-    if (todoState.items.some((x) => x.done)) tItems.push({ label: '끝낸 것 지우기', value: 'todo:clear' });
-    sections.push({ title: '할 일' + (todoState.items.length ? ' · ' + open + '개 남음' : ''), items: tItems });
-    const every = (todoState.recap && todoState.recap.every) || 0;
-    sections.push({
-      title: '정각 알림 (평일 근무 시간)',
-      fold: 'recap',
-      items: [[0, '끄기'], [30, '30분마다'], [60, '1시간마다'], [120, '2시간마다']]
-        .map(([m, label]) => ({ label, value: 'recap:' + m, checked: every === m })),
-    });
-
-    // Claude Code — 훅이 걸려 있으면 끝났을 때 · 허락이 필요할 때 알려 준다
-    const cs = claudeState || {};
-    const cItems = [];
-    if (cs.available === false) {
-      // 윈도우가 아니면 Claude Code 연결은 없고 알림 설정만
-    } else if (cs.connected) {
-      cItems.push({ label: '알림 말하기', value: 'claude:speak', checked: cs.speak });
-      cItems.push({ label: '연결 끊기', value: 'claude:off', danger: true });
-    } else {
-      cItems.push({ label: cs.legacy ? '알림 연결하기 (예전 훅 바꾸기)' : '알림 연결하기', value: 'claude:on' });
-    }
-    cItems.push({ label: (cs.available === false ? '시스템 알림' : '윈도우 알림') + ' (허락 · 오류 · 기한 · 빌드 실패)', value: 'toast:' + (cs.toast ? 'off' : 'on'), checked: !!cs.toast });
-    if (inbox.items.length) cItems.push({ label: '최근 알림 보기' + (inbox.unread() ? ' (' + inbox.unread() + ')' : ''), value: 'act:inbox' });
-    sections.push({ title: cs.available === false ? '알림' : 'Claude Code' + (cs.connected ? ' · 연결됨' : ''), fold: cs.connected ? 'claude' : '', items: cItems });
-    // 세션 현황 — 누르면 그 터미널 창으로 (↗ 는 창을 찾아 둔 세션)
-    if (cs.connected && claudeSessions.length) {
-      sections.push({ title: 'Claude 세션 (눌러서 그 창으로)', items: claude.menuItems(claudeSessions) });
-    }
-
-    sections.push({
-      title: '커서',
-      fold: 'cursor',
-      items: [
-        { label: '신경 안 쓰기', value: 'cursor:none', checked: cursorPlay.mode === 'none' },
-        { label: '쫓아오기', value: 'cursor:chase', checked: cursorPlay.mode === 'chase' },
-        { label: '도망가기', value: 'cursor:flee', checked: cursorPlay.mode === 'flee' },
-      ],
-    });
-
-    if (autoStart && autoStart.available) {
-      sections.push({ items: [{ label: '윈도우 시작할 때 실행', value: 'auto:toggle', checked: autoStart.on }] });
-    }
-
-    sections.push({
       title: '리마인더',
       fold: 'remind',
       items: [
@@ -1268,19 +1214,17 @@
         { label: '60분 뒤 알림', value: 'remind:60' },
       ],
     });
-
     if (reminders.length) {
-      sections.push({
-        title: '예약됨 (눌러서 취소)',
-        items: reminders.map((r) => ({
-          label: '✕ ' + r.text,
-          value: 'unremind:' + r.id,
-          danger: true,
-        })),
-      });
+      sections.push({ title: '예약됨 (눌러서 취소)', items: reminders.map((r) => ({ label: '✕ ' + r.text, value: 'unremind:' + r.id, danger: true })) });
     }
 
-    sections.push({ items: [{ label: '종료', value: 'act:quit', danger: true }] });
+    sections.push({
+      items: [
+        { label: '설정…', value: 'act:settings' },
+        { label: '메모 · 카드 숨기기', value: 'todo:hide', checked: window.PetNotes.hidden },
+        { label: '종료', value: 'act:quit', danger: true },
+      ],
+    });
     menu.build(sections);
   }
 
@@ -1331,6 +1275,8 @@
       todoState = await window.petAPI.recapSetEvery(parseInt(arg, 10));
       const m = parseInt(arg, 10);
       p.say({ text: m ? (m >= 60 ? m / 60 + '시간' : m + '분') + '마다 할 일 짚어 줄게' : '정각 알림 껐어', ms: 2400, quiet: true });
+    } else if (kind === 'tool') {
+      window.petAPI.openPalette(arg);
     } else if (kind === 'inbox') {
       if (arg === 'clear') { inbox.items = []; inbox.sync(); }
       else {
@@ -1363,6 +1309,7 @@
       else if (arg === 'talk') p.chatter.prod();
       else if (arg === 'update') window.petAPI.updatePrompt();
       else if (arg === 'whatsnew') window.petAPI.whatsNew();
+      else if (arg === 'settings') window.petAPI.openSettings();
       else if (arg === 'inbox') setTimeout(() => inbox.open(), 0);   // 이 메뉴가 닫힌 뒤에 연다
       else if (arg === 'chat') {
         chatOn = !chatOn;
@@ -1638,21 +1585,29 @@
   const FAST_STATES = ['drag', 'fall', 'climb', 'run', 'approach', 'rush', 'vanish'];
   const MID_STATES = ['walk', 'nightmare'];
   const FIXED_FPS = Number((/[?&]fps=(\d+)/.exec(location.search) || [])[1]) || 0;   // 측정용 (DESKPET_FPS)
+  // 설정 창의 "움직임" — 가만히 · 걷기 · 빠른 동작 · 모두 잠 (보통이 위 설명의 값)
+  const FPS_TIERS = {
+    light: { still: 8, mid: 20, fast: 30, sleep: 4 },
+    normal: { still: 12, mid: 30, fast: 40, sleep: 6 },
+    smooth: { still: 20, mid: 40, fast: 50, sleep: 8 },
+  };
+  let fpsTier = FPS_TIERS.normal;
   function wantFps() {
     if (FIXED_FPS) return FIXED_FPS;
-    if (drag) return 40;
-    let fps = 6;
+    const T = fpsTier;
+    if (drag) return T.fast;
+    let fps = T.sleep;
     let allAsleep = pets.length > 0;
     for (const p of pets) {
       const S = p.S;
-      if (FAST_STATES.indexOf(S.state) >= 0) return 40;
-      if (S.vy !== 0 || S.y < stage.ground - 0.5) return 40;                        // 공중
-      if (Math.abs(S.vx) > 5 && MID_STATES.indexOf(S.state) < 0) return 40;         // 던진 뒤 미끄러짐
-      if (MID_STATES.indexOf(S.state) >= 0) fps = Math.max(fps, 30);
+      if (FAST_STATES.indexOf(S.state) >= 0) return T.fast;
+      if (S.vy !== 0 || S.y < stage.ground - 0.5) return T.fast;                    // 공중
+      if (Math.abs(S.vx) > 5 && MID_STATES.indexOf(S.state) < 0) return T.fast;     // 던진 뒤 미끄러짐
+      if (MID_STATES.indexOf(S.state) >= 0) fps = Math.max(fps, T.mid);
       if (p.view && window.SpriteView && !(p.view instanceof window.SpriteView)) fps = Math.max(fps, 30);
       if (S.state !== 'sleep') allAsleep = false;
     }
-    return allAsleep ? fps : Math.max(fps, 12);
+    return allAsleep ? fps : Math.max(fps, T.still);
   }
 
   let frameTimer = null;
@@ -1734,6 +1689,17 @@
     modeByChar = cfg.modes || {};
     tone = cfg.tone === 'dark' ? 'dark' : 'light';
     cursorPlay.mode = cfg.cursorMode || 'none';
+    fpsTier = FPS_TIERS[cfg.fps] || FPS_TIERS.normal;
+    hotkeyMap = cfg.hotkeys || {};
+    // 설정 창에서 바꾼 값 — 저장은 메인이 했고 여기선 들고 있는 값만 고친다
+    window.petAPI.onPrefs((v) => {
+      tone = v.tone;
+      chatOn = v.chatter;
+      cursorPlay.mode = v.cursorMode;
+      fpsTier = FPS_TIERS[v.fps] || FPS_TIERS.normal;
+      if (v.hotkeys) hotkeyMap = v.hotkeys;
+      wakeFrames();
+    });
 
     stage = await window.petAPI.getStage();
     window.PetNotes.init(stage);
@@ -1857,6 +1823,8 @@
       claude.on({ kind: cmd.slice(7), project: 'test', sec: 42, busy: 0 });
     } else if (cmd.indexOf('notes:hidden:') === 0) {
       window.PetNotes.setHidden(cmd.slice(13) === '1');
+    } else if (cmd === 'notes:reload') {
+      window.PetNotes.setData(await window.petAPI.notesGet());   // 빠른 메모로 붙인 메모
     } else if (cmd === 'inbox') {
       inbox.open();
     } else if (cmd === 'recap') {
@@ -1884,7 +1852,11 @@
 
   // 디버깅용
   window.__pets = pets;
-  window.__debug = { hug, talk, dark, claude, recap, cursorPlay, cursor, setCompanion };   // 녹화 · 테스트 스크립트용
+  window.__debug = {   // 녹화 · 테스트 스크립트용
+    hug, talk, dark, claude, recap, cursorPlay, cursor, setCompanion,
+    openMenu: () => { const p = pets[0]; menuPet = p; buildMenu(p); menu.show(p.S.x, p.S.y - p.height * 0.55, stage); },
+    prefs: () => ({ tone, chatOn, cursor: cursorPlay.mode, fps: wantFps(), hotkeys: hotkeyMap }),
+  };
   if (location.search.indexOf('trace') >= 0) {
     setInterval(() => {
       for (const p of pets) {

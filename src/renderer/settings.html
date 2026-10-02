@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <title>DeskPet 설정</title>
+  <style>
+    html, body { margin: 0; }
+    body {
+      background: #1d2130; color: #e8ecf5; font-family: 'Malgun Gothic', sans-serif; font-size: 13px;
+      padding: 6px 18px 22px;
+    }
+    h2 { font-size: 13px; color: #8fa6ff; margin: 18px 0 6px; padding-bottom: 5px; border-bottom: 1px solid #2f3549; font-weight: 600; }
+    .row { display: flex; align-items: center; gap: 10px; min-height: 34px; }
+    .row > label.name { width: 112px; flex: none; color: #c3cce0; }
+    .note { color: #7d869c; font-size: 11.5px; }
+    .warn { color: #ffb36b; font-size: 11.5px; }
+    .spacer { flex: 1; }
+    .seg { display: inline-flex; background: #0f121b; border: 1px solid #3a4058; border-radius: 8px; padding: 2px; }
+    .seg button { border: 0; background: transparent; color: #a8b2c8; font: inherit; font-size: 12.5px; padding: 4px 11px; border-radius: 6px; cursor: pointer; }
+    .seg button:hover { color: #fff; }
+    .seg button.on { background: #3b5bdb; color: #fff; }
+    .tg { position: relative; width: 36px; height: 20px; flex: none; cursor: pointer; }
+    .tg input { display: none; }
+    .tg span { position: absolute; inset: 0; background: #3a4058; border-radius: 10px; transition: background .15s; }
+    .tg span::after { content: ''; position: absolute; left: 3px; top: 3px; width: 14px; height: 14px; border-radius: 50%; background: #c3cce0; transition: left .15s; }
+    .tg input:checked + span { background: #3b5bdb; }
+    .tg input:checked + span::after { left: 19px; background: #fff; }
+    .tg input:disabled + span { opacity: .4; cursor: default; }
+    button.btn { background: #2f3549; color: #c3cce0; border: 0; border-radius: 7px; padding: 5px 11px; font: inherit; font-size: 12.5px; cursor: pointer; }
+    button.btn:hover { background: #3b4460; color: #fff; }
+    button.btn.danger:hover { background: #8a2b2b; }
+    select {
+      background: #0f121b; color: #e8ecf5; border: 1px solid #3a4058; border-radius: 6px;
+      padding: 4px 6px; font: inherit; font-size: 12.5px; color-scheme: dark;
+    }
+    .key {
+      min-width: 170px; padding: 5px 10px; background: #0f121b; border: 1px solid #3a4058; border-radius: 6px;
+      font-family: Consolas, monospace; font-size: 12.5px; cursor: pointer; outline: none;
+    }
+    .key.capturing { border-color: #5b7cfa; color: #8fa6ff; }
+    .key.off { color: #6b7590; }
+    .badge { font-size: 11.5px; padding: 2px 8px; border-radius: 9px; background: #2f3549; color: #a8b2c8; }
+    .badge.ok { background: rgba(64, 192, 87, .18); color: #8ce99a; }
+    #toast { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); background: #3b5bdb; color: #fff; padding: 6px 14px; border-radius: 8px; font-size: 12.5px; opacity: 0; transition: opacity .2s; pointer-events: none; }
+    #toast.show { opacity: 1; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <div id="toast"></div>
+  <script>
+    const api = window.prefsAPI;
+    let st = null;
+    let capturing = null;     // 단축키를 새로 받는 중인 탭
+
+    const el = (tag, attrs, ...kids) => {
+      const e = document.createElement(tag);
+      for (const [k, v] of Object.entries(attrs || {})) {
+        if (k === 'class') e.className = v;
+        else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
+        else if (v !== undefined && v !== null && v !== false) e.setAttribute(k, v === true ? '' : v);
+      }
+      for (const k of kids.flat()) if (k != null && k !== false) e.append(k.nodeType ? k : String(k));
+      return e;
+    };
+    const toast = (t) => {
+      const b = document.getElementById('toast');
+      b.textContent = t;
+      b.classList.add('show');
+      clearTimeout(toast.t);
+      toast.t = setTimeout(() => b.classList.remove('show'), 1800);
+    };
+    const set = async (key, value, msg) => {
+      st = await api.set(key, value);
+      render();
+      if (msg) toast(msg);
+    };
+    const row = (name, ...kids) => el('div', { class: 'row' }, el('label', { class: 'name' }, name), ...kids);
+    const seg = (options, cur, onPick) => el('div', { class: 'seg' },
+      options.map(([v, label]) => el('button', { class: v === cur ? 'on' : '', onclick: () => v !== cur && onPick(v) }, label)));
+    const toggle = (on, onChange, disabled) => {
+      const i = el('input', { type: 'checkbox', disabled });
+      i.checked = !!on;
+      i.addEventListener('change', () => onChange(i.checked));
+      return el('label', { class: 'tg' }, i, el('span'));
+    };
+
+    // ── 단축키 ──
+    const accLabel = (acc) => (acc ? acc.replace('CommandOrControl', 'Ctrl').replace('Super', 'Win') : '끔');
+    const CODE = { Space: 'Space', Backquote: '`', Minus: '-', Equal: '=', BracketLeft: '[', BracketRight: ']', Backslash: '\\', Semicolon: ';', Quote: "'", Comma: ',', Period: '.', Slash: '/', ArrowUp: 'Up', ArrowDown: 'Down', ArrowLeft: 'Left', ArrowRight: 'Right', Enter: 'Enter', Tab: 'Tab', Home: 'Home', End: 'End', PageUp: 'PageUp', PageDown: 'PageDown', Insert: 'Insert' };
+    function keyOf(e) {
+      let m = /^Key([A-Z])$/.exec(e.code);
+      if (m) return m[1];
+      m = /^Digit(\d)$/.exec(e.code);
+      if (m) return m[1];
+      if (/^F\d{1,2}$/.test(e.code)) return e.code;
+      return CODE[e.code] || null;
+    }
+    function startCapture(tab) {
+      capturing = tab;
+      api.action('hk-pause');
+      render();
+    }
+    function endCapture() {
+      capturing = null;
+      api.action('hk-resume').then((s) => { st = s; render(); });
+    }
+    window.addEventListener('keydown', (e) => {
+      if (!capturing) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();          // 아래 Esc = 창 닫기 로 넘어가지 않게
+      if (['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) return;
+      const tab = capturing;
+      if (e.key === 'Escape') { endCapture(); return; }
+      const noMod = !e.ctrlKey && !e.altKey && !e.shiftKey && !e.metaKey;
+      if (noMod && (e.key === 'Backspace' || e.key === 'Delete')) {
+        capturing = null;
+        set('hotkey', { tab, acc: '' }, '단축키를 껐어요');
+        return;
+      }
+      const k = keyOf(e);
+      if (!k) { toast('그 키는 쓸 수 없어요 — 글자 · 숫자 · F키 · Space 등'); return; }
+      if (noMod || (e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey)) { toast('Ctrl · Alt · Win 중 하나와 같이 눌러 주세요'); return; }
+      const acc = [e.ctrlKey && 'CommandOrControl', e.altKey && 'Alt', e.shiftKey && 'Shift', e.metaKey && 'Super', k].filter(Boolean).join('+');
+      capturing = null;
+      set('hotkey', { tab, acc }).then(() => {
+        toast((st.hotkeyFailed || []).includes(acc) ? '다른 프로그램이 쓰고 있어서 못 잡았어요' : accLabel(acc) + ' 로 바꿨어요');
+      });
+    }, true);
+
+    function render() {
+      if (!st) return;
+      const root = document.getElementById('root');
+      root.innerHTML = '';
+      const add = (...n) => root.append(...n);
+
+      // 캐릭터
+      add(el('h2', {}, '캐릭터'));
+      add(row('크기', seg(st.sizes.map((s) => [s.value, s.label]), st.size, (v) => set('size', v, '크기를 바꿨어요 — 캐릭터가 다시 떠요'))));
+      if (st.displays.length > 1) {
+        const sel = el('select', { onchange: (e) => set('display', Number(e.target.value), '모니터를 옮겼어요') },
+          st.displays.map((d) => { const o = el('option', { value: d.id }, d.label); o.selected = d.current; return o; }));
+        add(row('모니터', sel));
+      }
+      add(row('분위기', seg([['light', '가볍게'], ['dark', '원작처럼']], st.tone, (v) => set('tone', v)), el('span', { class: 'note' }, '원작 대사가 있는 캐릭터만 달라져요')));
+      add(row('혼잣말', toggle(st.chatter, (v) => set('chatter', v)), el('span', { class: 'note' }, '가끔 혼자 말하기')));
+      add(row('커서', seg([['none', '신경 안 쓰기'], ['chase', '쫓아오기'], ['flee', '도망가기']], st.cursorMode, (v) => set('cursorMode', v))));
+
+      // 할 일
+      const r = st.recap;
+      add(el('h2', {}, '할 일 · 정각 알림'));
+      add(row('정각마다 짚기', seg([[0, '끄기'], [30, '30분'], [60, '1시간'], [120, '2시간']], r.every, (v) => set('recap', { every: v }))));
+      const hourSel = (cur, from, to, onPick) => {
+        const s = el('select', { onchange: (e) => onPick(Number(e.target.value)), disabled: !r.every });
+        for (let h = from; h <= to; h++) { const o = el('option', { value: h }, h + '시'); o.selected = h === cur; s.append(o); }
+        return s;
+      };
+      add(row('시간', hourSel(r.from, 0, 23, (v) => set('recap', { from: v })), '~', hourSel(r.to, 1, 24, (v) => set('recap', { to: v })),
+        el('span', { class: 'note' }, '끝 시각 정각까지')));
+      add(row('평일만', toggle(r.weekdays, (v) => set('recap', { weekdays: v }), !r.every)));
+      add(row('할 일 파일', el('button', { class: 'btn', onclick: () => api.action('todo') }, 'todo.md 열기'), el('span', { class: 'note' }, '메모장 · Claude Code 로 고쳐도 돼요')));
+
+      // 알림
+      add(el('h2', {}, '알림'));
+      add(row(st.isWin ? '윈도우 알림' : '시스템 알림', toggle(st.toast, (v) => set('toast', v)), el('span', { class: 'note' }, '허락 요청 · 오류 · 할 일 기한 · 빌드 실패')));
+      if (st.claude.available !== false) {
+        const c = st.claude;
+        add(row('Claude Code',
+          el('span', { class: 'badge' + (c.connected ? ' ok' : '') }, c.connected ? '연결됨' : '연결 안 됨'),
+          c.connected
+            ? el('button', { class: 'btn danger', onclick: async () => { st = await api.action('claude-off'); render(); toast('연결을 끊었어요'); } }, '연결 끊기')
+            : el('button', { class: 'btn', onclick: async () => { st = await api.action('claude-on'); render(); toast(st.claude.connected ? '연결했어요' : '연결 못 했어요'); } }, c.legacy ? '연결하기 (예전 훅 바꾸기)' : '연결하기'),
+          el('span', { class: 'note' }, '끝남 · 허락 요청 알림')));
+        if (c.connected) add(row('Claude 소식 말하기', toggle(c.speak, (v) => set('speak', v))));
+      }
+
+      // 도구
+      add(el('h2', {}, '도구'));
+      for (const [tab, name] of [['memo', '빠른 메모'], ['clip', '클립보드 기록'], ['links', '바로가기']]) {
+        const acc = st.hotkeys[tab];
+        const on = capturing === tab;
+        const failed = acc && (st.hotkeyFailed || []).includes(acc);
+        add(row(name,
+          el('div', { class: 'key' + (on ? ' capturing' : '') + (!acc ? ' off' : ''), tabindex: 0, title: '눌러서 새 단축키 입력', onclick: () => (on ? endCapture() : startCapture(tab)) },
+            on ? '새 키를 누르세요… (Esc 취소 · Del 끄기)' : accLabel(acc)),
+          acc !== st.hotkeyDefaults[tab] ? el('button', { class: 'btn', onclick: () => set('hotkey', { tab, reset: true }, '기본값으로 돌렸어요') }, '기본값') : null,
+          failed ? el('span', { class: 'warn' }, '다른 프로그램이 쓰는 중') : null));
+      }
+      add(row('클립보드 기록', toggle(!st.clipPaused, (v) => set('clipPaused', !v, v ? '다시 기록해요' : '기록을 멈췄어요')),
+        el('span', { class: 'note' }, '기록은 끄면 사라지고 📌 고정만 남아요')));
+
+      // 성능
+      add(el('h2', {}, '성능'));
+      add(row('움직임', seg([['light', '가볍게'], ['normal', '보통'], ['smooth', '부드럽게']], st.fps, (v) => set('fps', v)),
+        el('span', { class: 'note' }, { light: 'CPU 가장 적게 · 조금 뚝뚝', normal: '권장', smooth: 'CPU 더 씀' }[st.fps])));
+      add(row('그래픽 가속', seg([['auto', '자동'], ['on', '켜기'], ['off', '끄기']], st.gpu, (v) => set('gpu', v, '다음에 켤 때 적용돼요')),
+        el('span', { class: 'note' }, '지금 ' + (st.gpuNow ? '켜짐' : '꺼짐') + ' · 자동은 Spine 캐릭터일 때만 켜요')));
+
+      // 일반
+      add(el('h2', {}, '일반'));
+      add(row(st.isWin ? '윈도우 시작할 때' : '로그인할 때', toggle(st.autoStart.on, (v) => set('autoStart', v), !st.autoStart.available),
+        st.autoStart.available ? null : el('span', { class: 'note' }, 'exe 로 실행할 때만 바꿀 수 있어요')));
+      add(row('업데이트', toggle(st.updateCheck, (v) => set('updateCheck', v)), el('span', { class: 'note' }, '자동 확인'), el('span', { class: 'spacer' }),
+        el('button', { class: 'btn', onclick: async () => { toast('확인하는 중…'); const s = await api.action('update'); st = s; render(); toast(s.update ? '새 버전 v' + s.update + ' — 캐릭터 말풍선을 눌러 주세요' : '지금이 최신이에요'); } }, '지금 확인')));
+      add(row('버전', el('span', {}, 'v' + st.version), el('span', { class: 'spacer' }),
+        el('button', { class: 'btn', onclick: () => api.action('whatsnew') }, '새로 바뀐 것'),
+        el('button', { class: 'btn', onclick: () => api.action('log') }, '로그'),
+        el('button', { class: 'btn', onclick: () => api.action('data') }, '설정 폴더')));
+    }
+
+    api.get().then((s) => { st = s; render(); });
+    api.onChanged(() => { if (!capturing) api.get().then((s) => { st = s; render(); }); });
+    window.addEventListener('beforeunload', () => { if (capturing) api.action('hk-resume'); });
+    window.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !capturing) window.close(); });
+  </script>
+</body>
+</html>

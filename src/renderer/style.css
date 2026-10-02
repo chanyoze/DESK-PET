@@ -237,6 +237,29 @@ body {
   font-size: 11px;
   color: #8f9bb3;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  align-items: center;
+}
+
+/* 밀린 것 한꺼번에 — 오늘로 · 언젠가로 · 끝냄 */
+.todo-group .group-acts {
+  margin-left: auto;
+  display: flex;
+  gap: 3px;
+  padding-bottom: 2px;
+}
+.todo-group .group-acts button {
+  min-width: 0;
+  opacity: 0.85;
+  padding: 0 6px;
+  font-size: 10.5px;
+  line-height: 16px;
+  height: 17px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+}
+.todo-group .group-acts button:hover {
+  background: rgba(91, 124, 250, 0.45);
 }
 
 .chip-due,

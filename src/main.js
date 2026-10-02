@@ -1,4 +1,4 @@
-const { app, BrowserWindow, screen, ipcMain, Tray, Menu, nativeImage, shell, Notification, dialog } = require('electron');
+const { app, BrowserWindow, screen, ipcMain, Tray, Menu, nativeImage, shell, Notification, dialog, globalShortcut } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { pathToFileURL } = require('url');
@@ -14,6 +14,10 @@ const psScripts = require('./ps-scripts');
 const notesStore = require('./notes-store');
 const editorWindow = require('./editor-window');
 const updater = require('./updater');
+const clipHistory = require('./clipboard-history');
+const shortcutsStore = require('./shortcuts-store');
+const palette = require('./palette-window');
+const settingsWindow = require('./settings-window');
 
 const DEV = process.argv.includes('--dev');
 
@@ -292,6 +296,18 @@ function createWindow() {
 function buildTrayMenu() {
   const chars = listCharacters();
   return Menu.buildFromTemplate([
+    // 놓친 알림 — 트레이에 빨간 점이 있을 때 여기서 바로 목록을 연다
+    { label: inboxUnread ? '🔔 놓친 알림 ' + inboxUnread + '개 보기' : '최근 알림 보기', click: () => win?.webContents.send('pet:command', 'inbox') },
+    { type: 'separator' },
+    { label: ('빠른 메모  ' + hotkeyLabel('memo')).trim(), click: () => palette.open('memo') },
+    { label: ('클립보드 기록  ' + hotkeyLabel('clip')).trim(), click: () => palette.open('clip') },
+    { label: ('바로가기  ' + hotkeyLabel('links')).trim(), click: () => palette.open('links') },
+    { type: 'separator' },
+    { label: '할 일 추가…', click: () => win?.webContents.send('pet:command', 'todo:add') },
+    { label: '지금 할 일 정리해줘', click: () => sendRecap('manual') },
+    // 화면 공유 · 회의 때 — 캐릭터를 못 잡아도 여기서 숨길 수 있게
+    { label: '메모 · 할 일 카드 숨기기', type: 'checkbox', checked: !!settings.load().notesHidden, click: (it) => setNotesHidden(it.checked) },
+    { type: 'separator' },
     {
       label: '캐릭터',
       submenu: chars.map((c) => ({
@@ -306,57 +322,20 @@ function buildTrayMenu() {
       })),
     },
     {
-      label: '크기',
-      submenu: SIZES.map((s) => ({
-        label: s.label,
-        type: 'radio',
-        checked: s.value === sizeScale(),
-        click: () => {
-          settings.save({ sizeScale: s.value });
-          win?.reload();
-        },
-      })),
-    },
-    { type: 'separator' },
-    {
-      label: '모니터',
-      submenu: displayList().map((d) => ({
-        label: d.label,
-        type: 'radio',
-        checked: d.current,
-        click: () => moveToDisplay(d.id),
-      })).concat([
-        { type: 'separator' },
-        { label: '지금 마우스가 있는 모니터로', click: () => moveToDisplay(screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).id) },
-      ]),
-    },
-    {
-      // 좌클릭 메뉴와 같은 설정. 도망가기 중에 캐릭터를 못 잡아도 여기서 끌 수 있다
+      // 도망가기 중엔 캐릭터를 못 잡으니 여기서도 끌 수 있게 남겨 둔다
       label: '커서',
       submenu: [['none', '신경 안 쓰기'], ['chase', '쫓아오기'], ['flee', '도망가기']].map(([m, label]) => ({
         label,
         type: 'radio',
         checked: (settings.load().cursorMode || 'none') === m,
-        click: () => {
-          settings.save({ cursorMode: m });
-          win?.webContents.send('pet:command', 'cursor:' + m);
-        },
+        click: () => { settings.save({ cursorMode: m }); sendPetPrefs(); },
       })),
     },
-    // 놓친 알림 — 트레이에 빨간 점이 있을 때 여기서 바로 목록을 연다
-    { label: inboxUnread ? '🔔 놓친 알림 ' + inboxUnread + '개 보기' : '최근 알림 보기', click: () => win?.webContents.send('pet:command', 'inbox') },
-    { type: 'separator' },
-    { label: '할 일 추가…', click: () => win?.webContents.send('pet:command', 'todo:add') },
-    { label: '지금 할 일 정리해줘', click: () => sendRecap('manual') },
-    { label: '새로 바뀐 것 보기', click: () => showWhatsNew(whatsNewBetween(null, app.getVersion()).slice(0, 3)) },
-    { label: updateInfo ? '⬆ 업데이트 v' + updateInfo.version + '…' : '업데이트 확인 (지금 v' + app.getVersion() + ')', click: () => (updateInfo ? promptUpdate() : checkUpdate(true)) },
-    // 화면 공유 · 회의 때 — 캐릭터를 못 잡아도 여기서 숨길 수 있게
-    { label: '메모 · 할 일 카드 숨기기', type: 'checkbox', checked: !!settings.load().notesHidden, click: (it) => setNotesHidden(it.checked) },
     { label: '가운데로 불러오기', click: () => win?.webContents.send('pet:command', 'recall') },
-    { label: '깨우기', click: () => win?.webContents.send('pet:command', 'wake') },
-    { label: '다음 캐릭터', click: () => win?.webContents.send('pet:command', 'next') },
     { type: 'separator' },
-    { label: '개발자 도구', click: () => win?.webContents.openDevTools({ mode: 'detach' }) },
+    { label: '설정…', click: () => openSettings() },
+    { label: updateInfo ? '⬆ 업데이트 v' + updateInfo.version + '…' : '업데이트 확인 (지금 v' + app.getVersion() + ')', click: () => (updateInfo ? promptUpdate() : checkUpdate(true)) },
+    ...(app.isPackaged ? [] : [{ label: '개발자 도구', click: () => win?.webContents.openDevTools({ mode: 'detach' }) }]),
     { type: 'separator' },
     { label: '종료', click: () => { app.quit(); } },
   ]);
@@ -398,9 +377,12 @@ let todoTimer = null;
 
 /** 다시 읽고, 새로 끝낸 항목을 오늘 끝낸 수에 더한 뒤 렌더러에 알린다 */
 function refreshTodo() {
-  const prev = new Map(todo.items.map((x) => [x.text, x.done]));
+  makeRepeats();
+  // 구역까지 넣어 짝짓는다 — 반복 틀과 그날 만든 항목은 제목이 같다
+  const key = (x) => (x.date || (x.inRepeat ? '반복' : '언젠가')) + '|' + x.text;
+  const prev = new Map(todo.items.map((x) => [key(x), x.done]));
   todo = notesStore.load(todoFile());
-  const newlyDone = todo.items.filter((x) => x.done && prev.get(x.text) === false).length;
+  const newlyDone = todo.items.filter((x) => x.done && !x.inRepeat && prev.get(key(x)) === false).length;   // 반복 틀 체크(쉬기)는 빼고
   if (newlyDone) {
     const today = new Date().toDateString();
     const log = settings.load().todoDone || {};
@@ -408,6 +390,22 @@ function refreshTodo() {
   }
   win?.webContents.send('pet:todo', todoState());
   return todoState();
+}
+
+/**
+ * 반복 할 일 — 오늘에 해당하는 틀을 오늘 구역에 넣는다. 오늘 만든 제목은 설정(repeatMade)에 적어 두어
+ * 사용자가 지우거나 옮긴 걸 같은 날 다시 만들지 않는다. 파일이 바뀌면 지켜보기가 다시 부르지만 made 때문에 돌지 않는다.
+ */
+function makeRepeats() {
+  try {
+    const today = notesStore.ymd(new Date());
+    const prev = settings.load().repeatMade || {};
+    const r = notesStore.materialize(todoFile(), new Date(), prev.date === today ? prev.texts : []);
+    if (prev.date !== today || r.added.length) settings.save({ repeatMade: { date: today, texts: r.made } });
+    if (r.added.length) console.log('[todo] 반복 할 일 넣음', r.added.length);
+  } catch (e) {
+    console.error('[todo] 반복 만들기 실패:', e.message);
+  }
 }
 
 function todoState() {
@@ -518,6 +516,7 @@ function startReminderLoop() {
     if (now.getDate() !== lastDay) {   // 날짜가 바뀌면 매일 항목 초기화
       fired.clear();
       lastDay = now.getDate();
+      refreshTodo();               // 반복 할 일 · 오늘 날짜가 바뀐다
     }
 
     const cfg = settings.load();
@@ -773,6 +772,7 @@ let updateInfo = null;          // 찾은 새 버전 { version, notes, url, asse
 let updating = false;
 
 async function checkUpdate(manual) {
+  if (!manual && settings.load().updateCheck === false) return;      // 설정 창에서 자동 확인을 껐으면
   try {
     const r = await updater.check(manual ? null : settings.load().updateSkip);
     const was = updateInfo && updateInfo.version;
@@ -968,6 +968,21 @@ if (process.env.DESKPET_USERDATA) app.setPath('userData', process.env.DESKPET_US
       };
     }
     console.log('[app] 시작 v' + app.getVersion(), process.platform, app.isPackaged ? 'exe' : 'dev', process.env.PORTABLE_EXECUTABLE_FILE || process.execPath);
+    /*
+     * 처리 안 된 오류 — Electron 은 기본으로 "A JavaScript error occurred in the main process" 창을 띄운다.
+     * 타이머 안에서 나면 1초마다 창이 쌓인다 (2026-10-02 클립보드 기록에서 겪음). 상시 켜 두는 앱이라
+     * 창 대신 로그에 남기고 계속 돈다. 같은 오류는 1분에 한 번만 적는다.
+     */
+    const seen = new Map();
+    const report = (kind, e) => {
+      const msg = (e && e.stack) || String(e);
+      const key = msg.split('\n')[0];
+      if (Date.now() - (seen.get(key) || 0) < 60e3) return;
+      seen.set(key, Date.now());
+      console.error('[app] ' + kind + ':', msg);
+    };
+    process.on('uncaughtException', (e) => report('처리 안 된 오류', e));
+    process.on('unhandledRejection', (e) => report('처리 안 된 Promise 거부', e));
   } catch { /* 로그를 못 남겨도 앱은 돈다 */ }
 })();
 
@@ -1039,7 +1054,10 @@ if (!app.requestSingleInstanceLock()) {
       }
     }
 
+    settings.onSave((patch) => { if (Object.keys(patch).some((k) => PREF_KEYS.includes(k))) settingsWindow.refresh(); });
     startReminderLoop();
+    clipHistory.start(app.getPath('userData'), () => !!settings.load().clipPaused);
+    registerHotkeys();
     afterUpdate();
     checkWhatsNew(hadSettings);
     // 개발 옵션 --update-now: 확인 창 없이 바로 받아서 바꿔 끼운다 (업데이트 과정 시험용)
@@ -1077,7 +1095,7 @@ ipcMain.handle('display:set', (_e, id) => {
 // ── 설정 · 리마인더 ─────────────────────────────────────────
 ipcMain.handle('settings:get', () => {
   const cfg = settings.load();
-  return { ...cfg, currentCharacter, sizes: SIZES, settingsPath: settings.FILE() };
+  return { ...cfg, currentCharacter, sizes: SIZES, settingsPath: settings.FILE(), hotkeys: hotkeys() };
 });
 ipcMain.handle('settings:setSize', (_e, value) => {
   settings.save({ sizeScale: value });
@@ -1102,7 +1120,8 @@ ipcMain.handle('settings:setChat', (_e, v) => settings.save({ chatter: !!v }));
 
 // ── Claude Code 연결 · 자동 시작 ─────────────────────────────
 ipcMain.handle('claude:status', () => claudeStatus());
-ipcMain.handle('claude:connect', () => {
+ipcMain.handle('claude:connect', () => claudeConnect());
+function claudeConnect() {
   try {
     claudeHooks.install({ scriptPath: claudeHookScript(), port: settings.load().notifyPort });
     return claudeStatus();
@@ -1110,8 +1129,9 @@ ipcMain.handle('claude:connect', () => {
     console.error('[claude] 연결 실패:', e.message);
     return { ...claudeStatus(), error: e.message };
   }
-});
-ipcMain.handle('claude:disconnect', () => {
+}
+ipcMain.handle('claude:disconnect', () => claudeDisconnect());
+function claudeDisconnect() {
   try {
     claudeHooks.uninstall({ scriptPath: claudeHookScript() });
     try { fs.unlinkSync(claudeHookScript()); } catch { /* 없으면 그만 */ }
@@ -1120,7 +1140,7 @@ ipcMain.handle('claude:disconnect', () => {
     console.error('[claude] 연결 끊기 실패:', e.message);
     return { ...claudeStatus(), error: e.message };
   }
-});
+}
 ipcMain.handle('claude:setSpeak', (_e, v) => {
   settings.save({ speakOnClaude: !!v });
   return claudeStatus();
@@ -1137,10 +1157,13 @@ ipcMain.handle('todo:add', async (_e, defaults) => {
   const r = await openEditor({
     mode: 'todo', title: '할 일 추가',
     hint: '첫 줄이 할 일, 다음 줄부터는 설명. 여러 개를 한꺼번에 넣으려면 아래 "줄마다 따로" 를 켠다.',
-    todo: { date: d.date || notesStore.ymd(new Date()), backlog: !!d.backlog, category: d.category || '', categories: todo.categories || [], saved: todoCats() },
+    todo: {
+      date: d.date || notesStore.ymd(new Date()), backlog: !!d.backlog, category: d.category || '', categories: todo.categories || [], saved: todoCats(),
+      repeat: d.repeat ? { rule: '매일', time: null } : null,
+    },
   });
   if (r && r.text.trim()) {
-    notesStore.add(todoFile(), { text: r.text, date: r.date, backlog: r.backlog, category: r.category, due: r.due, split: !!r.split });
+    notesStore.add(todoFile(), { text: r.text, date: r.date, backlog: r.backlog, category: r.category, due: r.due, split: !!r.split, repeat: r.repeat || null });
   }
   return refreshTodo();
 });
@@ -1154,11 +1177,20 @@ ipcMain.handle('todo:edit', async (_e, i, text) => {
     text: it.text + (it.detail ? '\n' + it.detail : ''),
     todo: {
       edit: true, date: it.date || notesStore.ymd(new Date()), backlog: !!it.backlog, category: it.category || '',
-      due: it.explicitDue ? it.due : '', categories: todo.categories || [], saved: todoCats(),
+      due: it.explicitDue ? it.due : '', categories: todo.categories || [], saved: todoCats(), repeat: it.repeat || null,
     },
   });
   if (r && r.text.trim()) {
-    notesStore.update(todoFile(), it.i, it.text, { text: r.text, date: r.date, backlog: r.backlog, category: r.category, due: r.due });
+    notesStore.update(todoFile(), it.i, it.text, { text: r.text, date: r.date, backlog: r.backlog, category: r.category, due: r.due, repeat: r.repeat || null });
+  }
+  return refreshTodo();
+});
+/** 여러 개 한꺼번에 옮기기 — 밀린 것 정리. target = 'today' | 'backlog' | 'done' */
+ipcMain.handle('todo:move', (_e, refs, target) => {
+  const t = target === 'today' ? { date: notesStore.ymd(new Date()) } : target === 'backlog' ? { backlog: true } : target === 'done' ? { done: true } : null;
+  if (t && Array.isArray(refs)) {
+    const r = notesStore.moveItems(todoFile(), refs.map((x) => ({ i: x.i, text: String(x.text) })), t);
+    console.log('[todo] 한꺼번에', target, r.moved);
   }
   return refreshTodo();
 });
@@ -1233,6 +1265,235 @@ ipcMain.handle('toast:set', (_e, v) => { settings.save({ toastOn: !!v }); return
 ipcMain.handle('update:prompt', () => promptUpdate());
 ipcMain.handle('whatsnew:show', () => showWhatsNew(whatsNewBetween(null, app.getVersion()).slice(0, 3)));
 ipcMain.handle('update:check', () => checkUpdate(true));
+
+// ════════════════════════════════════════════════════════════
+//  설정 창 — 메뉴에 흩어져 있던 설정을 한곳에 (settings-window.js · renderer/settings.html)
+// ════════════════════════════════════════════════════════════
+/**
+ * prefs:get 은 지금 값 전부, prefs:set(key, value) 는 하나 바꾸고 바로 적용한 뒤 prefs:get 결과를 돌려준다.
+ * 캐릭터가 들고 있는 값(분위기 · 혼잣말 · 커서 · 프레임)은 pet:prefs 로 렌더러에 알린다.
+ * fps: 'light' | 'normal' | 'smooth' (pet.js FPS_TIERS), gpu: 'auto' | 'on' | 'off' (다음에 켤 때)
+ */
+const FPS_PRESETS = ['light', 'normal', 'smooth'];
+const PREF_KEYS = ['sizeScale', 'tone', 'chatter', 'cursorMode', 'display', 'recap', 'toastOn', 'speakOnClaude',
+  'clipPaused', 'hotkeys', 'fps', 'gpu', 'updateCheck'];
+
+function prefsState() {
+  const cfg = settings.load();
+  return {
+    version: app.getVersion(),
+    isWin: IS_WIN,
+    size: sizeScale(),
+    sizes: SIZES,
+    tone: cfg.tone === 'dark' ? 'dark' : 'light',
+    chatter: cfg.chatter !== false,
+    cursorMode: cfg.cursorMode || 'none',
+    displays: displayList(),
+    recap: recapCfg(),
+    toast: cfg.toastOn !== false,
+    claude: claudeStatus(),
+    hotkeys: hotkeys(),
+    hotkeyDefaults: HOTKEYS_DEFAULT,
+    hotkeyFailed: hotkeyFailed,
+    clipPaused: !!cfg.clipPaused,
+    fps: FPS_PRESETS.includes(cfg.fps) ? cfg.fps : 'normal',
+    gpu: ['on', 'off'].includes(cfg.gpu) ? cfg.gpu : 'auto',
+    gpuNow: gpuOn,
+    autoStart: autoStartStatus(),
+    updateCheck: cfg.updateCheck !== false,
+    paths: { userData: app.getPath('userData') },
+  };
+}
+
+/** 캐릭터 쪽이 들고 있는 값 — 바뀌면 렌더러에 */
+function sendPetPrefs() {
+  const cfg = settings.load();
+  win?.webContents.send('pet:prefs', {
+    tone: cfg.tone === 'dark' ? 'dark' : 'light',
+    chatter: cfg.chatter !== false,
+    cursorMode: cfg.cursorMode || 'none',
+    fps: FPS_PRESETS.includes(cfg.fps) ? cfg.fps : 'normal',
+    hotkeys: hotkeys(),
+  });
+}
+
+/** 단축키 문자열 다듬기 — 수식키 하나 이상 + 키 하나. 빈 문자열은 끄기 */
+function cleanAccel(acc) {
+  const s = String(acc || '').trim();
+  if (!s) return '';
+  const parts = s.split('+').map((x) => x.trim()).filter(Boolean);
+  const mods = parts.filter((x) => /^(CommandOrControl|Ctrl|Control|Alt|Shift|Super|Cmd|Command)$/i.test(x));
+  if (!mods.length || parts.length - mods.length !== 1) return null;
+  return parts.join('+');
+}
+
+ipcMain.handle('prefs:get', () => prefsState());
+ipcMain.handle('prefs:set', (_e, key, value) => {
+  const cfg = settings.load();
+  switch (key) {
+    case 'size':
+      if (SIZES.some((s) => s.value === value) && value !== sizeScale()) { settings.save({ sizeScale: value }); win?.reload(); }
+      break;
+    case 'tone': settings.save({ tone: value === 'dark' ? 'dark' : 'light' }); sendPetPrefs(); break;
+    case 'chatter': settings.save({ chatter: !!value }); sendPetPrefs(); break;
+    case 'cursorMode': settings.save({ cursorMode: ['chase', 'flee'].includes(value) ? value : 'none' }); sendPetPrefs(); break;
+    case 'fps': if (FPS_PRESETS.includes(value)) { settings.save({ fps: value }); sendPetPrefs(); } break;
+    case 'display': if (screen.getAllDisplays().some((d) => d.id === value)) moveToDisplay(value); break;
+    case 'recap': {
+      const v = value || {};
+      const r = { ...recapCfg() };
+      if ([0, 30, 60, 120].includes(v.every)) r.every = v.every;
+      if (Number.isInteger(v.from) && v.from >= 0 && v.from <= 23) r.from = v.from;
+      if (Number.isInteger(v.to) && v.to >= 1 && v.to <= 24) r.to = v.to;
+      if (typeof v.weekdays === 'boolean') r.weekdays = v.weekdays;
+      if (r.to <= r.from) r.to = Math.min(24, r.from + 1);
+      settings.save({ recap: r });
+      refreshTodo();
+      break;
+    }
+    case 'toast': settings.save({ toastOn: !!value }); break;
+    case 'speak': settings.save({ speakOnClaude: !!value }); break;
+    case 'clipPaused': settings.save({ clipPaused: !!value }); break;
+    case 'gpu': settings.save({ gpu: ['on', 'off'].includes(value) ? value : 'auto' }); break;
+    case 'updateCheck': settings.save({ updateCheck: !!value }); break;
+    case 'autoStart': if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: !!value, path: loginExe() }); break;
+    case 'hotkey': {
+      const tab = value && value.tab;
+      if (!(tab in HOTKEYS_DEFAULT)) break;
+      const acc = value.reset ? HOTKEYS_DEFAULT[tab] : cleanAccel(value.acc);
+      if (acc == null) break;
+      settings.save({ hotkeys: { ...(cfg.hotkeys || {}), [tab]: acc } });
+      registerHotkeys(true);
+      sendPetPrefs();
+      break;
+    }
+    default:
+      console.warn('[prefs] 모르는 설정:', key);
+  }
+  return prefsState();
+});
+ipcMain.handle('prefs:action', async (_e, name) => {
+  if (name === 'update') await checkUpdate(true);
+  else if (name === 'whatsnew') showWhatsNew(whatsNewBetween(null, app.getVersion()).slice(0, 3));
+  else if (name === 'log') shell.showItemInFolder(path.join(app.getPath('userData'), 'deskpet.log'));
+  else if (name === 'data') shell.openPath(app.getPath('userData'));
+  else if (name === 'todo') openTodoFile();
+  else if (name === 'claude-on') claudeConnect();
+  else if (name === 'claude-off') claudeDisconnect();
+  else if (name === 'hk-pause') globalShortcut.unregisterAll();     // 단축키를 새로 누르는 동안은 지금 것이 가로채지 않게
+  else if (name === 'hk-resume') registerHotkeys(true);
+  return { ...prefsState(), update: updateInfo ? updateInfo.version : null };
+});
+
+function openSettings() {
+  settingsWindow.open(targetDisplay());
+}
+ipcMain.handle('settings:open', () => { openSettings(); return true; });
+// ════════════════════════════════════════════════════════════
+//  빠른 메모 · 클립보드 기록 · 바로가기 (팔레트 창, 전역 단축키)
+// ════════════════════════════════════════════════════════════
+/**
+ * 단축키는 설정 hotkeys 로 바꿀 수 있다. 다른 프로그램이 먼저 잡고 있으면 등록이 실패한다 → 로그 · 말풍선으로 알린다.
+ * 클립보드 내용은 로그에 찍지 않는다.
+ */
+const HOTKEYS_DEFAULT = {
+  memo: 'CommandOrControl+Alt+Space',
+  clip: 'CommandOrControl+Alt+V',
+  links: 'CommandOrControl+Alt+O',
+};
+const hotkeys = () => ({ ...HOTKEYS_DEFAULT, ...(settings.load().hotkeys || {}) });
+const hotkeyLabel = (tab) => (hotkeys()[tab] || '').replace('CommandOrControl', IS_MAC ? 'Cmd' : 'Ctrl');
+const shortcutsFile = () => path.join(app.getPath('userData'), 'shortcuts.json');
+
+let hotkeyFailed = [];
+function registerHotkeys(quiet) {
+  globalShortcut.unregisterAll();
+  const failed = [];
+  for (const [tab, acc] of Object.entries(hotkeys())) {
+    if (!acc) continue;
+    let ok = false;
+    try { ok = globalShortcut.register(acc, () => palette.open(tab)); } catch { ok = false; }
+    if (!ok) failed.push(acc);
+  }
+  console.log('[tools] 단축키', JSON.stringify(hotkeys()), failed.length ? '— 등록 실패: ' + failed.join(', ') : '');
+  hotkeyFailed = failed;
+  if (failed.length && !quiet) {
+    win?.webContents.once('did-finish-load', () => setTimeout(() => win?.webContents.send('pet:say', {
+      text: '단축키 ' + failed.join(', ') + ' 는 다른 프로그램이 쓰고 있어서 못 잡았어 (메뉴에서 열 수는 있어)', ms: 8000, quiet: true,
+    }), 4000));
+  }
+}
+
+ipcMain.handle('palette:init', () => ({
+  tab: palette.initialTab(),
+  hotkeys: { memo: hotkeyLabel('memo'), clip: hotkeyLabel('clip'), links: hotkeyLabel('links') },
+}));
+ipcMain.on('palette:close', () => palette.close());
+ipcMain.handle('palette:open', (_e, tab) => palette.open(tab) && true);
+
+// 빠른 메모 — 오늘 할 일 · 언젠가 · 스티커 메모
+ipcMain.handle('memo:save', (_e, m) => {
+  const text = String((m && m.text) || '');
+  if (!text.trim()) return { ok: false };
+  if (m.target === 'note') {
+    const list = notesStore.loadNotes(notesFile());
+    list.push({ id: 'n' + Date.now().toString(36), text, color: 'yellow', x: null, y: null, collapsed: false });
+    notesStore.saveNotes(notesFile(), list);
+    if (settings.load().notesHidden) setNotesHidden(false);
+    win?.webContents.send('pet:command', 'notes:reload');
+  } else {
+    notesStore.add(todoFile(), m.target === 'backlog' ? { text, backlog: true } : { text, date: notesStore.ymd(new Date()) });
+    refreshTodo();
+  }
+  console.log('[tools] 빠른 메모 저장 →', m.target);
+  win?.webContents.send('pet:say', { text: m.target === 'note' ? '메모 붙여 뒀어' : m.target === 'backlog' ? '언젠가 목록에 적어 뒀어' : '오늘 할 일에 적어 뒀어', ms: 2200, quiet: true });
+  return { ok: true };
+});
+
+// 클립보드 기록
+ipcMain.handle('clip:read', () => clipHistory.read());          // Electron 44: 클립보드는 Promise
+ipcMain.handle('clip:list', () => clipHistory.list());
+ipcMain.handle('clip:copy', (_e, t) => clipHistory.copy(t));
+ipcMain.handle('clip:pin', (_e, t, on) => clipHistory.pin(t, on));
+ipcMain.handle('clip:remove', (_e, t) => clipHistory.remove(t));
+ipcMain.handle('clip:clear', () => clipHistory.clear());
+ipcMain.handle('clip:pause', (_e, v) => { settings.save({ clipPaused: !!v }); return clipHistory.list(); });
+
+// 바로가기
+const linksWithKind = () => shortcutsStore.load(shortcutsFile()).map((x) => ({ ...x, resolved: shortcutsStore.kindOf(x) }));
+ipcMain.handle('links:list', () => linksWithKind());
+ipcMain.handle('links:save', (_e, item) => { shortcutsStore.upsert(shortcutsFile(), item || {}); return linksWithKind(); });
+ipcMain.handle('links:remove', (_e, id) => { shortcutsStore.remove(shortcutsFile(), id); return linksWithKind(); });
+ipcMain.handle('links:move', (_e, id, dir) => { shortcutsStore.move(shortcutsFile(), id, dir); return linksWithKind(); });
+ipcMain.handle('links:open', async (_e, id) => {
+  const x = shortcutsStore.load(shortcutsFile()).find((s) => s.id === id);
+  if (!x) return { ok: false, error: '없는 바로가기' };
+  const kind = shortcutsStore.kindOf(x);
+  console.log('[tools] 바로가기 열기:', x.name, '(' + kind + ')');
+  try {
+    if (kind === 'url') await shell.openExternal(x.target);
+    else if (kind === 'path') {
+      const err = await shell.openPath(x.target.replace(/^"(.*)"$/, '$1'));
+      if (err) return { ok: false, error: err };
+    } else {
+      // 명령 — 셸로 실행하고 기다리지 않는다 (예: code "C:\work\DESK-PET", explorer, 배치 파일)
+      const { spawn } = require('child_process');
+      spawn(x.target, { shell: true, detached: true, stdio: 'ignore', windowsHide: true, cwd: require('os').homedir() }).unref();
+    }
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+ipcMain.handle('links:pick', async (_e, folder) => {
+  palette.hold(true);
+  try {
+    const r = await dialog.showOpenDialog(palette.window() || undefined, { properties: [folder ? 'openDirectory' : 'openFile'] });
+    return r.canceled || !r.filePaths.length ? null : r.filePaths[0];
+  } finally {
+    palette.hold(false);
+  }
+});
 ipcMain.handle('autostart:get', () => autoStartStatus());
 ipcMain.handle('autostart:set', (_e, on) => {
   if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: !!on, path: loginExe() });
@@ -1298,3 +1559,5 @@ ipcMain.on('mouse:interactive', (_e, interactive) => {
 });
 
 app.on('window-all-closed', () => app.quit());
+
+app.on('will-quit', () => { try { globalShortcut.unregisterAll(); } catch { /* 그만 */ } clipHistory.stop(); });

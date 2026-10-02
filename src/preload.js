@@ -50,6 +50,8 @@ contextBridge.exposeInMainWorld('petAPI', {
   todoEdit: (i, text) => ipcRenderer.invoke('todo:edit', i, text),
   todoRemove: (i, text) => ipcRenderer.invoke('todo:remove', i, text),
   todoClearDone: () => ipcRenderer.invoke('todo:clearDone'),
+  /** 여러 개 한꺼번에 — refs [{ i, text }], target 'today' | 'backlog' | 'done' (밀린 것 정리) */
+  todoMove: (refs, target) => ipcRenderer.invoke('todo:move', refs, target),
   /** todo.md 를 편집기로 연다 */
   todoOpen: () => ipcRenderer.invoke('todo:open'),
   recapNow: () => ipcRenderer.invoke('recap:now'),
@@ -74,6 +76,8 @@ contextBridge.exposeInMainWorld('petAPI', {
   inboxCount: (n) => ipcRenderer.send('inbox:count', n),
   /** 윈도우 알림(토스트) 켜기 · 끄기 → 켜졌는지 */
   toastSet: (v) => ipcRenderer.invoke('toast:set', v),
+  /** 팔레트 창 — 'memo' | 'clip' | 'links' */
+  openPalette: (tab) => ipcRenderer.invoke('palette:open', tab),
   // ── 업데이트 ──
   /** 확인 창 (지금 업데이트 / 나중에 / 건너뛰기) */
   updatePrompt: () => ipcRenderer.invoke('update:prompt'),
@@ -93,6 +97,10 @@ contextBridge.exposeInMainWorld('petAPI', {
   // ── 메인 → 렌더러 ──
   /** 트레이 메뉴 등에서 오는 명령 */
   onCommand: (cb) => ipcRenderer.on('pet:command', (_e, cmd) => cb(cmd)),
+  /** 설정 창에서 바꾼 값 { tone, chatter, cursorMode, fps } */
+  onPrefs: (cb) => ipcRenderer.on('pet:prefs', (_e, v) => cb(v)),
+  /** 설정 창 열기 */
+  openSettings: () => ipcRenderer.invoke('settings:open'),
   /** 해상도 변경 시 새 무대 정보 */
   onStage: (cb) => ipcRenderer.on('pet:stage', (_e, stage) => cb(stage)),
   /** 외부 알림·리마인더 → 말풍선 */

@@ -49,7 +49,14 @@ function save(patch) {
   } catch (e) {
     console.error('[settings] 저장 실패:', e.message);
   }
+  for (const fn of listeners) {
+    try { fn(patch); } catch (e) { console.error('[settings] 알림 실패:', e.message); }
+  }
   return next;
 }
 
-module.exports = { load, save, FILE };
+/** 저장될 때마다 바뀐 조각(patch)을 받는다 — 떠 있는 설정 창을 다시 그리려고 */
+const listeners = [];
+const onSave = (fn) => listeners.push(fn);
+
+module.exports = { load, save, onSave, FILE };

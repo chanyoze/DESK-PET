@@ -1,8 +1,8 @@
 # HANDOFF — 다음 세션에서 이어서 하기
 
-**작성 2026-09-30 · 갱신 2026-10-01(회사 PC 세션) · 버전 0.15.0 (+ 업데이트 기능 · 할 일 설명 · 카드에서 수정/삭제)**
+**작성 2026-09-30 · 갱신 2026-10-02(회사 PC 세션) · 버전 0.16.0**
 
-집 PC ↔ 회사 PC 세션 사이 인수인계 문서다. 새 세션은 이 파일 → `README.md` → `docs/ROADMAP.md` 순으로 읽으면 된다.
+집 PC ↔ 회사 PC 세션 사이 인수인계 문서다. 새 세션은 이 파일 → `README.md`(쓰는 법) → `docs/DEVELOPMENT.md`(개발 · 빌드 · 배포) → `docs/ROADMAP.md` 순으로 읽으면 된다.
 
 ---
 
@@ -22,6 +22,19 @@
 
 ## 2. 다음에 할 일
 
+### 2-00. v0.16.0 릴리스 (2026-10-02 회사 PC 세션)
+
+- 0.16.0 으로 올려 푸시 → `release.yml` 이 윈도우 `v0.16.0` · 맥 `mac-v0.16.0` 릴리스. 여기부터 업데이트 알림이 간다
+- 이번에 더한 것: **설정 창**(`settings-window.js` · `renderer/settings.html`, main.js 의 `prefs:get/set/action`) ·
+  **메뉴 정리**(좌클릭 · 트레이) · **반복 할 일**(`## 반복`, `notesStore.materialize`, 설정 `repeatMade`) ·
+  **밀린 것 한꺼번에**(`notesStore.moveItems`, IPC `todo:move`) · **README 나누기**(`docs/DEVELOPMENT.md`)
+- 설정 창의 값 중 캐릭터가 들고 있는 것(분위기 · 혼잣말 · 커서 · 움직임 · 단축키 글자)은 `pet:prefs` 로 렌더러에 보낸다.
+  메뉴 · 트레이에서 바꿔도 `settings.onSave` 가 떠 있는 설정 창을 다시 그린다
+- 움직임(fps) 단계는 `renderer/pet.js` 의 `FPS_TIERS` (가볍게 8/20/30/4 · 보통 12/30/40/6 · 부드럽게 20/40/50/8)
+- 회사 PC 바탕화면의 개인 빌드(0.15.0, 사마리 백룸 아이콘)는 0.16.0 공개판으로 업데이트 알림을 받는다 —
+  받으면 exe 아이콘만 기본으로 돌아가고 트레이 아이콘 · 캐릭터는 그대로. 개인 빌드로 계속 쓰려면 `npm run dist:private` 로 다시
+- 남은 후보: 화면 공유 · 전체화면 때 **자동 숨기기** (사용자: "우선은 괜찮다"), 클립보드 바로 붙여넣기 (사용자: 일단 안 함)
+
 ### 2-0. 업데이트 기능 (2026-10-01 회사 PC 세션, v0.16)
 
 - `package.json` 버전을 올려 main 에 푸시 → `release.yml` 이 윈도우 exe(`v버전`) · 맥 zip(`mac-v버전`, `mac.yml` 을 workflow_call 로)
@@ -37,6 +50,9 @@
 - **로그** — 앱이 `%APPDATA%\deskpet\deskpet.log` 에 시작 · 클릭(배지 · 말풍선 · 카드) · 창 찾기 · 창 앞으로 결과를 남긴다.
   "안 눌린다" · "터미널로 안 간다" 같은 말이 나오면 이것부터 볼 것 (2026-10-01: 오래 켜 둔 앱이 클릭을 못 받다가 다시 켜니 풀린 일 — 원인 미상)
 - **개인 아이콘** — `%APPDATA%\deskpet\private-icon.png` (회사 PC 엔 사마리 백룸 사진). exe 아이콘(개인 빌드) · 트레이 · 토스트에 쓰인다. 저장소엔 없다
+- **도구 팔레트** (2026-10-02) — 빠른 메모 · 클립보드 기록 · 바로가기, 전역 단축키 Ctrl+Alt+Space / V / O.
+  **Electron 44 의 clipboard.readText · writeText 는 Promise** 다 — 동기로 쓰면 오류가 난다 (그 탓에 오류 창이 1초마다 쌓였음).
+  지금은 메인의 처리 안 된 오류를 창 대신 로그로 남긴다
 - **버전은 굵직한 단위로만 올린다** (사용자 방침, 2026-10-01) — 버전을 올려 푸시하면 쓰는 사람 모두(지인 맥 포함)에게
   업데이트 알림이 가므로, 작은 수정은 버전 그대로 커밋만 하고 여러 개 모아서 한 번에 올린다
 - **버전을 올릴 땐 `src/whatsnew.json` 에 그 버전 요약부터** (쓰는 사람 말로 2~4줄) — 릴리스 노트 · 업데이트 창 ·
@@ -92,7 +108,7 @@
 ### 2-4. 그다음 후보 (우선순위 미정)
 - **화면 공유 · 전체화면 앱일 때 자동 숨기기** (지금은 메뉴 · 트레이 "메모 · 카드 숨기기" 로 수동)
   - 후보: `SHQueryUserNotificationState` (koffi 필요) 또는 PowerShell 자식 프로세스로 같은 API 를 2초마다
-- 할 일: 캐릭터가 카드로 걸어가 읽어 주기, Claude 작업 로그를 메모로, 밀린 일 오늘로 옮기기
+- 할 일: 캐릭터가 카드로 걸어가 읽어 주기, Claude 작업 로그를 메모로 (밀린 일 옮기기 · 반복은 v0.16 에서 함)
 - 칸을 뺀 달리기가 어색하면 남은 칸 수에 맞춰 fps 낮추기
 - 방해 금지 시간, 창 제목 표시줄 위 걷기 (ROADMAP Step 3), 파티원 추가(레비 등)
 
@@ -168,7 +184,9 @@ npm run dist                                # 공개 빌드 (에셋 없음)
 npm run dist:private                        # 개인 빌드 (에셋 포함, 배포 금지)
 ```
 
-- 렌더러 디버그: `window.__pets`, `window.__debug = { hug, talk, dark, setCompanion }`
+- 렌더러 디버그: `window.__pets`, `window.__debug = { hug, talk, dark, setCompanion, openMenu(), prefs() }`
+- 실행 중인 exe 와 겹치지 않게 시험하려면 `DESKPET_USERDATA=<임시 폴더>` (설정 · 할 일 · 단축키 모두 격리. 다만 개발 폴더의
+  `preset.json` 이 기본값으로 섞이고, 전역 단축키 · 45678 포트는 실행 중인 앱이 먼저 잡고 있다)
 - 실제 앱을 띄워 조작하는 테스트는 별도 폴더에 `package.json` + `main.js` 를 두고
   `require('<repo>/src/main.js')` 한 뒤 `executeJavaScript` · `sendInputEvent` 로 조작하는 방식을 썼다
 

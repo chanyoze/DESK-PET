@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<title>DeskPet</title>
+<style>
+  :root { --bg: #1d2130; --panel: #262b3d; --line: #3a4058; --fg: #e8ecf5; --dim: #8f9bb3; --acc: #5b7cfa; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    display: flex; flex-direction: column; box-sizing: border-box; padding: 12px 14px 10px;
+    background: var(--bg); color: var(--fg); font-family: 'Malgun Gothic', sans-serif; font-size: 13px;
+    border: 1px solid var(--line); border-radius: 0; user-select: none;
+  }
+  .tabs { display: flex; gap: 4px; margin-bottom: 10px; -webkit-app-region: drag; }
+  .tab { -webkit-app-region: no-drag; border: 0; background: transparent; color: var(--dim); font: inherit; font-size: 13px;
+         padding: 6px 12px; border-radius: 8px; cursor: pointer; }
+  .tab.on { background: var(--panel); color: var(--fg); font-weight: 700; }
+  .tab small { color: #6b7590; font-weight: 400; margin-left: 4px; }
+  .spacer { flex: 1; }
+  .close { -webkit-app-region: no-drag; border: 0; background: transparent; color: var(--dim); font-size: 16px; cursor: pointer; }
+  .pane { display: none; flex: 1; flex-direction: column; gap: 8px; min-height: 0; }
+  .pane.on { display: flex; }
+  input[type=text], textarea, select {
+    box-sizing: border-box; width: 100%; padding: 8px 10px; background: #0f121b; color: var(--fg);
+    border: 1px solid var(--line); border-radius: 8px; font: inherit; font-size: 14px; outline: none; user-select: text;
+  }
+  input:focus, textarea:focus { border-color: var(--acc); }
+  textarea { flex: 1; resize: none; line-height: 1.55; }
+  .row { display: flex; gap: 6px; align-items: center; }
+  .seg button, .btn { border: 0; background: var(--panel); color: #c3cce0; font: inherit; font-size: 12.5px; padding: 6px 11px; border-radius: 7px; cursor: pointer; }
+  .seg button.on { background: var(--acc); color: #fff; }
+  .btn.pri { background: #3b5bdb; color: #fff; }
+  .btn.warn { color: #ff9c9c; }
+  .hint { color: #6b7590; font-size: 11px; }
+  .list { flex: 1; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; background: #161a26; }
+  .item { display: flex; align-items: flex-start; gap: 8px; padding: 7px 10px; border-bottom: 1px solid #22273a; cursor: pointer; }
+  .item:last-child { border-bottom: 0; }
+  .item.sel { background: #2b3350; }
+  .item .main { flex: 1; min-width: 0; }
+  .item .t { white-space: pre-wrap; word-break: break-all; max-height: 3.1em; overflow: hidden; line-height: 1.55; }
+  .item .sub { color: #6b7590; font-size: 11px; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .item .acts { display: flex; gap: 2px; opacity: .55; }
+  .item:hover .acts, .item.sel .acts { opacity: 1; }
+  .ib { border: 0; background: transparent; color: #c3cce0; cursor: pointer; font-size: 13px; padding: 2px 5px; border-radius: 5px; }
+  .ib:hover { background: #3a4058; }
+  .ib.armed { background: #c53030; color: #fff; font-size: 11px; }
+  .group { padding: 5px 10px 3px; color: var(--dim); font-size: 11px; background: #1b2030; position: sticky; top: 0; }
+  .empty { padding: 18px; color: var(--dim); text-align: center; line-height: 1.7; }
+  .form { display: none; flex-direction: column; gap: 6px; padding: 10px; background: var(--panel); border-radius: 8px; }
+  .form.on { display: flex; }
+  .toast { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); background: #2f855a; color: #fff;
+           padding: 6px 14px; border-radius: 14px; font-size: 12.5px; display: none; }
+</style>
+</head>
+<body>
+  <div class="tabs">
+    <button class="tab" data-tab="memo">빠른 메모<small id="hk-memo"></small></button>
+    <button class="tab" data-tab="clip">클립보드<small id="hk-clip"></small></button>
+    <button class="tab" data-tab="links">바로가기<small id="hk-links"></small></button>
+    <span class="spacer"></span>
+    <button class="close" id="close" title="닫기 (Esc)">✕</button>
+  </div>
+
+  <!-- 빠른 메모 -->
+  <section class="pane" id="pane-memo">
+    <div class="row seg" id="memo-target">
+      <button data-t="today" class="on">오늘 할 일</button>
+      <button data-t="backlog">언젠가</button>
+      <button data-t="note">스티커 메모</button>
+      <span class="spacer"></span>
+      <button class="btn" id="memo-paste" title="지금 클립보드 글을 붙여 넣는다">📋 클립보드 붙이기</button>
+    </div>
+    <textarea id="memo-text" spellcheck="false" placeholder="첫 줄이 할 일, 다음 줄부터는 설명"></textarea>
+    <div class="row">
+      <span class="hint">Enter 저장 · Shift+Enter 줄바꿈 · Esc 닫기</span>
+      <span class="spacer"></span>
+      <button class="btn pri" id="memo-save">저장</button>
+    </div>
+  </section>
+
+  <!-- 클립보드 기록 -->
+  <section class="pane" id="pane-clip">
+    <input type="text" id="clip-q" placeholder="찾기 — ↑↓ 고르고 Enter 로 다시 복사" spellcheck="false" />
+    <div class="list" id="clip-list"></div>
+    <div class="row">
+      <span class="hint">📌 고정한 것만 남고, 나머지는 앱을 끄면 지워진다</span>
+      <span class="spacer"></span>
+      <button class="btn" id="clip-pause"></button>
+      <button class="btn warn" id="clip-clear">기록 비우기</button>
+    </div>
+  </section>
+
+  <!-- 바로가기 -->
+  <section class="pane" id="pane-links">
+    <div class="row">
+      <input type="text" id="links-q" placeholder="찾기 — ↑↓ 고르고 Enter 로 열기" spellcheck="false" />
+      <button class="btn" id="links-add" style="white-space:nowrap">+ 추가</button>
+    </div>
+    <div class="form" id="links-form">
+      <input type="text" id="lf-name" placeholder="이름 (예: 톰캣 로그 폴더)" spellcheck="false" />
+      <div class="row">
+        <input type="text" id="lf-target" placeholder="폴더 · 파일 경로, 주소(https://…), 또는 명령 (예: code &quot;C:\work\DESK-PET&quot;)" spellcheck="false" />
+        <button class="btn" id="lf-file" title="파일 고르기">파일</button>
+        <button class="btn" id="lf-folder" title="폴더 고르기">폴더</button>
+      </div>
+      <div class="row">
+        <select id="lf-kind" style="width:auto">
+          <option value="auto">종류: 자동</option>
+          <option value="path">파일 · 폴더 열기</option>
+          <option value="url">주소 열기</option>
+          <option value="command">명령 실행</option>
+        </select>
+        <span class="spacer"></span>
+        <button class="btn" id="lf-cancel">취소</button>
+        <button class="btn pri" id="lf-save">저장</button>
+      </div>
+    </div>
+    <div class="list" id="links-list"></div>
+  </section>
+
+  <div class="toast" id="toast"></div>
+
+<script>
+  const api = window.paletteAPI;
+  const $ = (id) => document.getElementById(id);
+  let tab = 'memo';
+  let memoTarget = 'today';
+  let clip = { pins: [], recent: [], paused: false };
+  let links = [];
+  const sel = { clip: 0, links: 0 };
+  let editing = null;
+
+  const ago = (t) => {
+    const s = Math.round((Date.now() - t) / 1000);
+    return s < 60 ? s + '초 전' : s < 3600 ? Math.round(s / 60) + '분 전' : Math.round(s / 3600) + '시간 전';
+  };
+  function toast(msg) {
+    const t = $('toast');
+    t.textContent = msg;
+    t.style.display = 'block';
+    setTimeout(() => { t.style.display = 'none'; }, 1400);
+  }
+
+  // ── 탭 ──
+  function setTab(t) {
+    tab = t;
+    document.querySelectorAll('.tab').forEach((b) => b.classList.toggle('on', b.dataset.tab === t));
+    document.querySelectorAll('.pane').forEach((p) => p.classList.toggle('on', p.id === 'pane-' + t));
+    if (t === 'memo') $('memo-text').focus();
+    if (t === 'clip') { refreshClip(); $('clip-q').focus(); }
+    if (t === 'links') { refreshLinks(); $('links-q').focus(); }
+  }
+  document.querySelectorAll('.tab').forEach((b) => b.onclick = () => setTab(b.dataset.tab));
+  $('close').onclick = () => api.close();
+
+  // ── 빠른 메모 ──
+  document.querySelectorAll('#memo-target button[data-t]').forEach((b) => b.onclick = () => {
+    memoTarget = b.dataset.t;
+    document.querySelectorAll('#memo-target button[data-t]').forEach((x) => x.classList.toggle('on', x === b));
+    $('memo-text').placeholder = memoTarget === 'note' ? '화면에 붙일 메모' : '첫 줄이 할 일, 다음 줄부터는 설명';
+    $('memo-text').focus();
+  });
+  $('memo-paste').onclick = async () => {
+    const t = await api.readClipboard();
+    const ta = $('memo-text');
+    ta.value = ta.value ? ta.value + '\n' + t : t;
+    ta.focus();
+  };
+  async function saveMemo() {
+    const text = $('memo-text').value;
+    if (!text.trim()) return;
+    await api.memoSave({ text, target: memoTarget });
+    api.close();
+  }
+  $('memo-save').onclick = saveMemo;
+  $('memo-text').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); saveMemo(); }
+  });
+
+  // ── 클립보드 ──
+  function clipRows() {
+    const q = $('clip-q').value.trim().toLowerCase();
+    const f = (x) => !q || x.text.toLowerCase().includes(q);
+    return clip.pins.filter(f).concat(clip.recent.filter(f));
+  }
+  function renderClip() {
+    const box = $('clip-list');
+    box.innerHTML = '';
+    const rows = clipRows();
+    $('clip-pause').textContent = clip.paused ? '▶ 기록 다시 시작' : '⏸ 기록 잠깐 멈춤';
+    if (!rows.length) {
+      box.innerHTML = '<div class="empty">' + (clip.paused ? '기록을 멈춰 둔 상태예요.' : '아직 복사한 게 없어요.<br>복사하면 여기 쌓여요 (앱을 켠 뒤부터).') + '</div>';
+      return;
+    }
+    sel.clip = Math.min(sel.clip, rows.length - 1);
+    let lastGroup = null;
+    rows.forEach((x, i) => {
+      const g = x.pinned ? '📌 고정' : '최근';
+      if (g !== lastGroup) { const h = document.createElement('div'); h.className = 'group'; h.textContent = g; box.appendChild(h); lastGroup = g; }
+      const el = document.createElement('div');
+      el.className = 'item' + (i === sel.clip ? ' sel' : '');
+      const main = document.createElement('div');
+      main.className = 'main';
+      const t = document.createElement('div');
+      t.className = 't';
+      t.textContent = x.text.length > 400 ? x.text.slice(0, 400) + '…' : x.text;
+      const sub = document.createElement('div');
+      sub.className = 'sub';
+      sub.textContent = ago(x.at) + ' · ' + x.text.length + '자';
+      main.appendChild(t); main.appendChild(sub);
+      const acts = document.createElement('div');
+      acts.className = 'acts';
+      const pin = document.createElement('button');
+      pin.className = 'ib'; pin.textContent = x.pinned ? '📌' : '📍'; pin.title = x.pinned ? '고정 풀기' : '고정 (앱을 꺼도 남는다)';
+      pin.onclick = async (e) => { e.stopPropagation(); clip = await api.clipPin(x.text, !x.pinned); renderClip(); };
+      acts.appendChild(pin);
+      if (!x.pinned) {
+        const del = document.createElement('button');
+        del.className = 'ib'; del.textContent = '✕'; del.title = '기록에서 빼기';
+        del.onclick = async (e) => { e.stopPropagation(); clip = await api.clipRemove(x.text); renderClip(); };
+        acts.appendChild(del);
+      }
+      el.appendChild(main); el.appendChild(acts);
+      el.onclick = () => copyClip(x.text);
+      el.onmouseenter = () => { sel.clip = i; box.querySelectorAll('.item').forEach((n, k) => n.classList.toggle('sel', k === i)); };
+      box.appendChild(el);
+    });
+    const s = box.querySelectorAll('.item')[sel.clip];
+    if (s) s.scrollIntoView({ block: 'nearest' });
+  }
+  async function refreshClip() { clip = await api.clipList(); renderClip(); }
+  async function copyClip(text) { await api.clipCopy(text); toast('복사했어 — Ctrl+V'); setTimeout(() => api.close(), 450); }
+  $('clip-q').addEventListener('input', () => { sel.clip = 0; renderClip(); });
+  $('clip-pause').onclick = async () => { clip = await api.clipPause(!clip.paused); renderClip(); };
+  $('clip-clear').onclick = async () => { clip = await api.clipClear(); renderClip(); };
+
+  // ── 바로가기 ──
+  const KIND = { url: '주소', path: '파일 · 폴더', command: '명령', auto: '자동' };
+  function linkRows() {
+    const q = $('links-q').value.trim().toLowerCase();
+    return links.filter((x) => !q || (x.name + ' ' + x.target).toLowerCase().includes(q));
+  }
+  function renderLinks() {
+    const box = $('links-list');
+    box.innerHTML = '';
+    const rows = linkRows();
+    if (!rows.length) {
+      box.innerHTML = '<div class="empty">' + (links.length ? '찾는 게 없어요.' : '자주 여는 폴더 · 파일 · 주소 · 명령을 <b>+ 추가</b> 로 등록해 두세요.<br>예) 톰캣 로그 폴더, 젠킨스 주소, <code>code "C:\\work\\DESK-PET"</code>') + '</div>';
+      return;
+    }
+    sel.links = Math.min(sel.links, rows.length - 1);
+    rows.forEach((x, i) => {
+      const el = document.createElement('div');
+      el.className = 'item' + (i === sel.links ? ' sel' : '');
+      const main = document.createElement('div');
+      main.className = 'main';
+      const t = document.createElement('div');
+      t.className = 't'; t.textContent = x.name;
+      const sub = document.createElement('div');
+      sub.className = 'sub'; sub.textContent = (KIND[x.resolved] || '') + ' · ' + x.target;
+      main.appendChild(t); main.appendChild(sub);
+      const acts = document.createElement('div');
+      acts.className = 'acts';
+      const mk = (label, title, fn) => { const b = document.createElement('button'); b.className = 'ib'; b.textContent = label; b.title = title; b.onclick = (e) => { e.stopPropagation(); fn(b); }; acts.appendChild(b); return b; };
+      mk('↑', '위로', async () => { links = await api.linksMove(x.id, -1); renderLinks(); });
+      mk('↓', '아래로', async () => { links = await api.linksMove(x.id, 1); renderLinks(); });
+      mk('✎', '고치기', () => openForm(x));
+      mk('✕', '지우기 (한 번 더 누르면 지운다)', async (b) => {
+        if (b.dataset.armed) { links = await api.linksRemove(x.id); renderLinks(); return; }
+        b.dataset.armed = '1'; b.textContent = '지울까?'; b.classList.add('armed');
+        setTimeout(() => { if (b.isConnected) { delete b.dataset.armed; b.textContent = '✕'; b.classList.remove('armed'); } }, 3000);
+      });
+      el.appendChild(main); el.appendChild(acts);
+      el.onclick = () => openLink(x);
+      el.onmouseenter = () => { sel.links = i; box.querySelectorAll('.item').forEach((n, k) => n.classList.toggle('sel', k === i)); };
+      box.appendChild(el);
+    });
+  }
+  async function refreshLinks() { links = await api.linksList(); renderLinks(); }
+  async function openLink(x) {
+    const r = await api.linksOpen(x.id);
+    if (r.ok) api.close(); else toast('못 열었어 — ' + (r.error || ''));
+  }
+  function openForm(x) {
+    editing = x || null;
+    $('lf-name').value = x ? x.name : '';
+    $('lf-target').value = x ? x.target : '';
+    $('lf-kind').value = x ? (x.kind || 'auto') : 'auto';
+    $('links-form').classList.add('on');
+    $('lf-name').focus();
+  }
+  $('links-add').onclick = () => openForm(null);
+  $('lf-cancel').onclick = () => { $('links-form').classList.remove('on'); $('links-q').focus(); };
+  $('lf-save').onclick = async () => {
+    const item = { id: editing && editing.id, name: $('lf-name').value, target: $('lf-target').value, kind: $('lf-kind').value };
+    if (!item.target.trim()) { $('lf-target').focus(); return; }
+    links = await api.linksSave(item);
+    $('links-form').classList.remove('on');
+    renderLinks();
+    $('links-q').focus();
+  };
+  const pick = (folder) => async () => {
+    const p = await api.pickPath(folder);
+    if (p) { $('lf-target').value = p; if (!$('lf-name').value) $('lf-name').value = p.split(/[\\/]/).filter(Boolean).pop(); }
+  };
+  $('lf-file').onclick = pick(false);
+  $('lf-folder').onclick = pick(true);
+  $('links-q').addEventListener('input', () => { sel.links = 0; renderLinks(); });
+
+  // ── 키보드 ──
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      if ($('links-form').classList.contains('on')) { $('links-form').classList.remove('on'); return; }
+      api.close(); return;
+    }
+    if (e.ctrlKey && ['1', '2', '3'].includes(e.key)) { setTab(['memo', 'clip', 'links'][+e.key - 1]); e.preventDefault(); return; }
+    const inForm = $('links-form').contains(document.activeElement);
+    if (tab === 'clip' || (tab === 'links' && !inForm)) {
+      const rows = tab === 'clip' ? clipRows() : linkRows();
+      if (e.key === 'ArrowDown') { sel[tab] = Math.min(rows.length - 1, sel[tab] + 1); tab === 'clip' ? renderClip() : renderLinks(); e.preventDefault(); }
+      else if (e.key === 'ArrowUp') { sel[tab] = Math.max(0, sel[tab] - 1); tab === 'clip' ? renderClip() : renderLinks(); e.preventDefault(); }
+      else if (e.key === 'Enter' && !e.isComposing && rows[sel[tab]]) { e.preventDefault(); tab === 'clip' ? copyClip(rows[sel[tab]].text) : openLink(rows[sel[tab]]); }
+    }
+    if (tab === 'links' && inForm && e.key === 'Enter' && !e.isComposing) { e.preventDefault(); $('lf-save').click(); }
+  });
+
+  api.onTab((t) => setTab(t));
+  api.init().then((o) => {
+    const hk = o.hotkeys || {};
+    for (const k of ['memo', 'clip', 'links']) if (hk[k]) $('hk-' + k).textContent = hk[k].replace('CommandOrControl', 'Ctrl');
+    setTab(o.tab || 'memo');
+  });
+</script>
+</body>
+</html>
