@@ -3,5 +3,6 @@
   "companion": null,
   "tone": "light",
   "sizeScale": 1,
-  "autoInstall": ["pokemon/herdier"]
+  "autoInstall": ["pokemon/herdier", "pokemon/marshtomp", "pokemon/wingull"],
+  "onlyCharacters": ["pokemon-herdier", "pokemon-marshtomp", "pokemon-wingull"]
 }

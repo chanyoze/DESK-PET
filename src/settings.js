@@ -24,9 +24,17 @@ const DEFAULTS = {
  * 빌드에 preset.json 이 들어 있으면 기본값으로 쓴다 (개인 빌드용 — tools/build-private.js).
  * 공개 빌드에는 없어서 DEFAULTS 그대로다. 사용자가 바꾼 설정은 이 위에 덮인다.
  */
+let PRESET = {};
 try {
-  Object.assign(DEFAULTS, JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'preset.json'), 'utf8')));
+  PRESET = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'preset.json'), 'utf8'));
+  Object.assign(DEFAULTS, PRESET);
 } catch { /* 없으면 그만 */ }
+
+/**
+ * 빌드가 정하는 값 — 저장된 값이 아니라 늘 지금 빌드의 프리셋을 따른다.
+ * (예전엔 저장 파일에 같이 적혀서, 업데이트로 프리셋이 바뀌어도 옛 목록 — "하데리어만" — 이 남았다)
+ */
+const BUILD_KEYS = ['autoInstall', 'onlyCharacters'];
 
 let cache = null;
 
@@ -37,6 +45,10 @@ function load() {
   } catch {
     cache = { ...DEFAULTS };
   }
+  for (const k of BUILD_KEYS) {
+    if (k in PRESET) cache[k] = PRESET[k];
+    else delete cache[k];
+  }
   return cache;
 }
 
@@ -45,7 +57,9 @@ function save(patch) {
   cache = next;
   try {
     fs.mkdirSync(path.dirname(FILE()), { recursive: true });
-    fs.writeFileSync(FILE(), JSON.stringify(next, null, 2));
+    const toFile = { ...next };
+    for (const k of BUILD_KEYS) delete toFile[k];
+    fs.writeFileSync(FILE(), JSON.stringify(toFile, null, 2));
   } catch (e) {
     console.error('[settings] 저장 실패:', e.message);
   }

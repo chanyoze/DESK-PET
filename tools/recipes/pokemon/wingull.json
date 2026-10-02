@@ -1,0 +1,77 @@
+{
+  "id": "pokemon-wingull",
+  "source": "PMDCollab SpriteCollab",
+  "dex": "0278",
+  "scale": 4,
+  "credits": [
+    "Wingull (#0278) sprites: CHUNSOFT",
+    "PMDCollab SpriteCollab — https://sprites.pmdcollab.org/"
+  ],
+  "clips": {
+    "idle": { "anim": "Idle", "left": 7, "right": 1 },
+    "idle2": { "anim": "Idle", "row": 0 },
+    "walk": { "anim": "Walk", "left": 6, "right": 2 },
+    "run": { "anim": "Walk", "left": 6, "right": 2, "speed": 1.8 },
+    "sleep": { "anim": "Sleep", "row": 0 },
+    "pet": { "anim": "Hop", "left": 7, "right": 1 },
+    "spin": { "anim": "Rotate", "row": 0 },
+    "hurt": { "anim": "Hurt", "left": 7, "right": 1 },
+    "work": { "anim": "Charge", "row": 0 },
+    "pounce": { "anim": "Attack", "left": 6, "right": 2, "once": true }
+  },
+  "manifest": {
+    "name": "갈모매",
+    "walkSpeed": 48,
+    "runSpeed": 130,
+    "animations": {
+      "idle": "idle",
+      "idle2": "idle2",
+      "walk": "walk",
+      "run": "run",
+      "sit": "idle2",
+      "sleep": "sleep",
+      "pet": "pet",
+      "special": ["pet", "spin"],
+      "drag": "hurt",
+      "fall": "hurt",
+      "climb": "walk",
+      "work": "work",
+      "pounce": "pounce"
+    },
+    "lines": {
+      "idle": ["갈매!", "(날개를 쭉 편다)", "바닷바람 냄새가 그립다.", "여기서 망 봐 줄게.", "오늘 바람 좋다. 갈매."],
+      "walk": ["뒤뚱뒤뚱… 걷는 것도 괜찮네.", "바다는 어느 쪽이지?", "한 바퀴 순찰 중. 갈매."],
+      "run": ["갈매갈매! 비켜!", "바람 타고 간다─!", "이 정도면 날아가는 거지?"],
+      "sit": ["날개 좀 쉬자.", "여기 앉아 있을게."],
+      "sleep": ["쿠울… 갈매…", "…(파도 소리 꿈)…", "…끼룩…"],
+      "morning": ["좋은 아침! 해 떴다. 갈매!", "일어났어? 아침 바람 상쾌하다!"],
+      "afternoon": ["점심 먹었어? 생선이면 좋겠다.", "오후엔 바람이 잦아드네."],
+      "evening": ["노을 예쁘다. 오늘도 고생했어.", "슬슬 둥지로 돌아갈 시간이야."],
+      "night": ["늦었어. 이제 쉬자.", "밤바다는 조용해. 너도 쉬어.", "눈 아프겠다. 조금만 하고 자."],
+      "longRun": ["오래 켜 뒀네. 창문 한 번 열어 볼래?", "계속 곁에 있었어. 갈매."],
+      "picked": ["끼룩!?", "어, 나 날 수 있는데?", "갈매! 내려 줘!"],
+      "thrown": ["끼루루룩─!", "날개 펴, 날개!", "바람 타고 간다아!"],
+      "landed": ["…착지 성공. 갈매.", "새는 이 정도로 안 다쳐.", "후우, 깜짝이야."],
+      "petted": ["헤헤, 좋아. 갈매!", "(날개를 파닥파닥)", "깃털 정리해 주는 거야?"],
+      "woken": ["끼룩!? …아, 너구나.", "음냐… 벌써 아침이야?", "안 잤어. 바다 보고 있었어."],
+      "together": ["같이 있으니까 든든하다. 갈매."]
+    },
+    "claude": {
+      "done": ["갈매! 다 끝났대. 확인해 봐!", "끝났어! 칭찬해 줘."],
+      "long": ["{m}분 기다렸어. 끝났어! 갈매!", "오래 걸렸지만 끝까지 지켜봤어."],
+      "sleepy": ["끼룩!? …아, 끝났대! 안 잤어.", "쿠울… 갈매!? 끝났어!"],
+      "fail": ["끼룩끼룩! 뭔가 멈췄어!", "…으. 오류가 났나 봐. 같이 보자."],
+      "permission": ["갈매! 허락이 필요하대!", "이거 해도 되냐고 물어봐."],
+      "waiting": ["네 대답 기다리고 있어. 갈매.", "…날개 접고 기다리는 중."],
+      "noWindow": ["그 창을 못 찾겠어… 하늘에서도 안 보여."]
+    },
+    "recap": {
+      "some": ["정각이야! 남은 일 {n}개. 갈매!", "잊지 않게 알려 줄게. 남은 거 {n}개."],
+      "now": ["남은 일 {n}개야."],
+      "none": ["할 일 다 끝났어! 대단해. 갈매!", "남은 거 없어. 바다 보러 가자!"],
+      "empty": ["적어 둔 할 일이 없어."],
+      "urgent": ["{t는} {left} 안에 해야 해! 갈매!", "{t}, {left} 남았어. 힘내!"],
+      "over": ["{t는} 벌써 지났어. 괜찮아, 지금 하자."]
+    }
+  }
+}

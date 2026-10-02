@@ -7,6 +7,14 @@ contextBridge.exposeInMainWorld('prefsAPI', {
   set: (key, value) => ipcRenderer.invoke('prefs:set', key, value),
   /** 버튼 — update · whatsnew · log · data · todo · claude-on · claude-off */
   action: (name) => ipcRenderer.invoke('prefs:action', name),
+  // 캐릭터 관리 — 목록 [{ id, name, kind: bundled|downloaded|made|user, hidden, main, companion }]
+  charsList: () => ipcRenderer.invoke('chars:admin'),
+  charsHide: (id, hidden) => ipcRenderer.invoke('chars:hide', id, hidden),     // → { list, error? }
+  charsRemove: (id) => ipcRenderer.invoke('chars:remove', id),                 // → { list, error? }
+  charsUse: (id) => ipcRenderer.invoke('chars:use', id),                       // → list
+  charsFolder: () => ipcRenderer.invoke('chars:folder'),
+  /** 내 그림으로 만들기 창 — id 를 주면 그 캐릭터 고치기 */
+  makerOpen: (id) => ipcRenderer.invoke('maker:open', id),
   /** 메뉴 · 트레이에서 바뀌었을 때 */
   onChanged: (cb) => ipcRenderer.on('prefs:changed', () => cb()),
 });

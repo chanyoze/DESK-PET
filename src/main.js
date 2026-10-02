@@ -18,6 +18,7 @@ const clipHistory = require('./clipboard-history');
 const shortcutsStore = require('./shortcuts-store');
 const palette = require('./palette-window');
 const settingsWindow = require('./settings-window');
+const makerWindow = require('./maker-window');
 
 const DEV = process.argv.includes('--dev');
 
@@ -74,16 +75,16 @@ function listCharacters() {
         const m = JSON.parse(fs.readFileSync(f, 'utf8'));
         // "hidden": true 인 캐릭터는 목록에서 뺀다 (지우지 않고 잠시 치워 둘 때)
         if (m.hidden) { seen.set(e.name, null); continue; }
-        seen.set(e.name, { id: e.name, name: m.name || e.name, renderer: m.renderer || 'parts' });
+        seen.set(e.name, { id: e.name, name: m.name || e.name, renderer: m.renderer || 'parts', user: base === userCharDir() });
       } catch { /* 깨진 매니페스트는 건너뛴다 */ }
     }
   }
-  // 설정(빌드 프리셋)의 onlyCharacters 가 있으면 그 캐릭터만 보인다 — 하데리어만 든 통파일처럼
-  // 공용 빌드 설정 때문에 기본 캐릭터가 같이 따라 들어가도 목록에는 안 나오게
+  // 빌드 프리셋의 onlyCharacters 가 있으면 앱에 든 캐릭터는 그것만 보인다 — 공용 빌드 설정 때문에
+  // 기본 캐릭터가 같이 따라 들어가도 목록에는 안 나오게. 사용자 폴더의 캐릭터(받은 것 · 직접 넣은 것)는 늘 보인다
   const only = settings.load().onlyCharacters;
   const list = [...seen.values()].filter(Boolean);
   if (Array.isArray(only) && only.length) {
-    const picked = list.filter((c) => only.includes(c.id));
+    const picked = list.filter((c) => c.user || only.includes(c.id));
     if (picked.length) return picked;
   }
   return list;
@@ -720,6 +721,19 @@ let inboxUnread = 0;           // 트레이 메뉴 맨 위 "놓친 알림 N개 �
  * 실행 중에 읽으므로 업데이트로 공개판이 돼도 트레이 아이콘은 그대로다.
  */
 const privateIconPath = () => path.join(app.getPath('userData'), 'private-icon.png');
+/** 개인 빌드에 아이콘이 들어 있으면 처음 켤 때 userData 로 꺼내 둔다 — 새 PC 에서도 트레이 · 알림 아이콘이 같고, 업데이트 뒤에도 남는다 */
+function unpackPrivateIcon() {
+  const bundled = path.join(__dirname, '..', 'private-icon.png');
+  try {
+    if (!fs.existsSync(privateIconPath()) && fs.existsSync(bundled)) {
+      fs.mkdirSync(path.dirname(privateIconPath()), { recursive: true });
+      fs.writeFileSync(privateIconPath(), fs.readFileSync(bundled));
+      console.log('[app] 개인 아이콘 꺼냄');
+    }
+  } catch (e) {
+    console.error('[app] 개인 아이콘 꺼내기 실패:', e.message);
+  }
+}
 function trayImage() {
   const own = privateIconPath();
   if (fs.existsSync(own)) {
@@ -1018,6 +1032,7 @@ if (!app.requestSingleInstanceLock()) {
     const cfg = settings.load();
     if (!currentCharacter) currentCharacter = cfg.character || null;
 
+    unpackPrivateIcon();
     createWindow();
     createTray();
     autoInstallCharacters(cfg);
@@ -1383,6 +1398,128 @@ ipcMain.handle('prefs:action', async (_e, name) => {
   else if (name === 'hk-pause') globalShortcut.unregisterAll();     // 단축키를 새로 누르는 동안은 지금 것이 가로채지 않게
   else if (name === 'hk-resume') registerHotkeys(true);
   return { ...prefsState(), update: updateInfo ? updateInfo.version : null };
+});
+
+// ════════════════════════════════════════════════════════════
+//  캐릭터 관리 · 내 그림으로 만들기 (설정 창 "캐릭터", maker-window.js)
+// ════════════════════════════════════════════════════════════
+/**
+ * 종류: bundled 앱에 든 것 · downloaded 받아 온 것(포켓몬 등) · made 내 그림으로 만든 것(id 가 my-) · user 직접 넣은 폴더
+ * 숨기기는 사용자 폴더 캐릭터의 character.json 에 "hidden": true (지우지 않는다 — 받아 온 건 지우면 다음에 켤 때 다시 받는다).
+ * 지우기는 내가 만든 것만.
+ */
+const MADE_ID = /^my-[a-z0-9]{4,24}$/;
+const SHEET_NAME = /^[a-z][a-z0-9]{0,15}$/;
+
+function charsAdmin() {
+  const cfg = settings.load();
+  const seen = new Map();
+  for (const base of charDirs()) {
+    let entries = [];
+    try { entries = fs.readdirSync(base, { withFileTypes: true }); } catch { continue; }
+    for (const e of entries) {
+      if (!e.isDirectory() || seen.has(e.name)) continue;
+      const dir = path.join(base, e.name);
+      let m;
+      try { m = JSON.parse(fs.readFileSync(path.join(dir, 'character.json'), 'utf8')); } catch { continue; }
+      const user = base === userCharDir();
+      const kind = !user ? 'bundled' : MADE_ID.test(e.name) ? 'made'
+        : fs.existsSync(path.join(dir, 'CREDITS.txt')) ? 'downloaded' : 'user';
+      seen.set(e.name, {
+        id: e.name, name: m.name || e.name, renderer: m.renderer || 'parts', kind, hidden: !!m.hidden,
+        main: e.name === (currentCharacter || cfg.character), companion: e.name === cfg.companion,
+      });
+    }
+  }
+  const shown = new Set(listCharacters().map((c) => c.id));
+  // 목록에 안 나오는 앱 속 캐릭터(onlyCharacters 로 가린 기본 캐릭터 등)는 관리 목록에서도 뺀다
+  return [...seen.values()].filter((c) => c.kind !== 'bundled' || shown.has(c.id));
+}
+
+ipcMain.handle('chars:admin', () => charsAdmin());
+ipcMain.handle('chars:hide', (_e, id, hidden) => {
+  const c = charsAdmin().find((x) => x.id === id);
+  if (!c || c.kind === 'bundled') return { error: '앱에 든 캐릭터는 숨길 수 없어요', list: charsAdmin() };
+  if (hidden && (c.main || c.companion)) return { error: '지금 나와 있는 캐릭터는 숨길 수 없어요 — 먼저 다른 캐릭터로 바꿔 주세요', list: charsAdmin() };
+  const f = path.join(userCharDir(), id, 'character.json');
+  const m = JSON.parse(fs.readFileSync(f, 'utf8'));
+  if (hidden) m.hidden = true; else delete m.hidden;
+  fs.writeFileSync(f, JSON.stringify(m, null, 2));
+  console.log('[chars]', hidden ? '숨김' : '보임', id);
+  return { list: charsAdmin() };
+});
+ipcMain.handle('chars:remove', (_e, id) => {
+  const c = charsAdmin().find((x) => x.id === id);
+  if (!c || c.kind !== 'made') return { error: '내가 만든 캐릭터만 지울 수 있어요', list: charsAdmin() };
+  if (c.main || c.companion) return { error: '지금 나와 있는 캐릭터는 지울 수 없어요 — 먼저 다른 캐릭터로 바꿔 주세요', list: charsAdmin() };
+  fs.rmSync(path.join(userCharDir(), id), { recursive: true, force: true });
+  console.log('[chars] 지움', id);
+  return { list: charsAdmin() };
+});
+ipcMain.handle('chars:folder', () => { fs.mkdirSync(userCharDir(), { recursive: true }); shell.openPath(userCharDir()); });
+ipcMain.handle('chars:use', (_e, id) => {
+  if (!listCharacters().some((c) => c.id === id)) return charsAdmin();
+  currentCharacter = id;
+  const patch = { character: id };
+  if (settings.load().companion === id) patch.companion = null;
+  settings.save(patch);
+  win?.reload();
+  return charsAdmin();
+});
+
+// 만들기 창
+ipcMain.handle('maker:open', (_e, id) => { makerWindow.open(targetDisplay(), id && MADE_ID.test(id) ? id : null); return true; });
+ipcMain.on('maker:close', () => makerWindow.close());
+ipcMain.handle('maker:init', () => {
+  const id = makerWindow.editing();
+  if (!id) return { edit: null };
+  const dir = path.join(userCharDir(), id);
+  try {
+    const manifest = JSON.parse(fs.readFileSync(path.join(dir, 'character.json'), 'utf8'));
+    const sheets = {};
+    for (const [name, def] of Object.entries(manifest.sheets || {})) {
+      sheets[name] = 'data:image/png;base64,' + fs.readFileSync(path.join(dir, def.file)).toString('base64');
+    }
+    return { edit: id, manifest, sheets };
+  } catch (e) {
+    console.error('[maker] 불러오기 실패:', id, e.message);
+    return { edit: null };
+  }
+});
+ipcMain.handle('maker:save', (_e, p) => {
+  try {
+    const id = p.id && MADE_ID.test(p.id) ? p.id : 'my-' + Date.now().toString(36);
+    const m = p.manifest || {};
+    if (!m.name || !m.sheets || !m.clips || !m.clips.idle) throw new Error('이름과 대기 그림이 필요해요');
+    const dir = path.join(userCharDir(), id);
+    const tmp = dir + '.part';
+    fs.rmSync(tmp, { recursive: true, force: true });
+    fs.mkdirSync(tmp, { recursive: true });
+    for (const [name, def] of Object.entries(m.sheets)) {
+      if (!SHEET_NAME.test(name) || typeof p.sheets[name] !== 'string') throw new Error('시트 이름이 이상해요: ' + name);
+      def.file = name + '.png';
+      fs.writeFileSync(path.join(tmp, def.file), Buffer.from(p.sheets[name], 'base64'));
+    }
+    const manifest = { ...m, renderer: 'sprite', maker: 1 };
+    delete manifest.hidden;
+    fs.writeFileSync(path.join(tmp, 'character.json'), JSON.stringify(manifest, null, 2));
+    fs.rmSync(dir, { recursive: true, force: true });
+    fs.renameSync(tmp, dir);
+    console.log('[maker] 저장:', id, Object.keys(m.sheets).join(','));
+    const cfg = settings.load();
+    if (p.use) {
+      currentCharacter = id;
+      settings.save({ character: id, companion: cfg.companion === id ? null : cfg.companion });
+      win?.reload();
+    } else if (id === (currentCharacter || cfg.character) || id === cfg.companion) {
+      win?.reload();                     // 나와 있는 캐릭터를 고쳤으면 바로 보이게
+    }
+    settingsWindow.refresh();
+    return { ok: true, id };
+  } catch (e) {
+    console.error('[maker] 저장 실패:', e.message);
+    return { ok: false, error: e.message };
+  }
 });
 
 function openSettings() {

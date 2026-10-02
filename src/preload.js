@@ -101,6 +101,8 @@ contextBridge.exposeInMainWorld('petAPI', {
   onPrefs: (cb) => ipcRenderer.on('pet:prefs', (_e, v) => cb(v)),
   /** 설정 창 열기 */
   openSettings: () => ipcRenderer.invoke('settings:open'),
+  /** 내 그림으로 캐릭터 만들기 창 */
+  openMaker: () => ipcRenderer.invoke('maker:open'),
   /** 해상도 변경 시 새 무대 정보 */
   onStage: (cb) => ipcRenderer.on('pet:stage', (_e, stage) => cb(stage)),
   /** 외부 알림·리마인더 → 말풍선 */
