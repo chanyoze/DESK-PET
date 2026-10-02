@@ -734,6 +734,36 @@ function unpackPrivateIcon() {
     console.error('[app] 개인 아이콘 꺼내기 실패:', e.message);
   }
 }
+/**
+ * 포터블 exe 는 켤 때마다 임시 폴더(%TEMP%\<무작위>)에 앱을 풀고, 정상으로 꺼지면 실행기가 지운다.
+ * 강제 종료 · 전원 꺼짐이면 그 폴더(약 330MB)가 남는다 → 켤 때 지난 것들을 치운다.
+ * 다른 DeskPet 이 쓰고 있는 폴더는 건드리지 않는다 — 실행 중인 exe 는 쓰기로 열 수 없다(EBUSY)는 걸로 가린다.
+ * (폴더 이름 바꾸기는 실행 중에도 돼서 판단에 못 쓴다 — 2026-10-02 시험)
+ */
+function cleanStalePortable() {
+  if (!IS_WIN || !app.isPackaged || !process.env.PORTABLE_EXECUTABLE_FILE) return;
+  const mine = path.dirname(process.execPath);
+  const tmp = path.dirname(mine);
+  let names = [];
+  try { names = fs.readdirSync(tmp); } catch { return; }
+  let freed = 0;
+  const rm = (p) => fs.promises.rm(p, { recursive: true, force: true }).catch(() => {});   // 몇 GB 일 수 있어 비동기로
+  for (const n of names) {
+    const dir = path.join(tmp, n);
+    if (/^[0-9A-Za-z]{20,40}\.deskpet-old$/.test(n)) { rm(dir); continue; }      // 지난번에 다 못 지운 것
+    if (dir.toLowerCase() === mine.toLowerCase() || !/^[0-9A-Za-z]{20,40}$/.test(n)) continue;
+    try {
+      if (!fs.existsSync(path.join(dir, 'DeskPet.exe')) || !fs.existsSync(path.join(dir, 'resources', 'app.asar'))) continue;
+      if (Date.now() - fs.statSync(dir).mtimeMs < 10 * 60e3) continue;      // 막 풀리는 중일 수 있다
+      fs.closeSync(fs.openSync(path.join(dir, 'DeskPet.exe'), 'r+'));       // 실행 중이면 여기서 실패한다 (EBUSY)
+      const gone = dir + '.deskpet-old';
+      fs.renameSync(dir, gone);
+      rm(gone);
+      freed++;
+    } catch { /* 쓰는 중 · 권한 — 그대로 둔다 */ }
+  }
+  if (freed) console.log('[app] 지난 실행이 남긴 임시 폴더 지움:', freed + '개');
+}
 function trayImage() {
   const own = privateIconPath();
   if (fs.existsSync(own)) {
@@ -1033,6 +1063,7 @@ if (!app.requestSingleInstanceLock()) {
     if (!currentCharacter) currentCharacter = cfg.character || null;
 
     unpackPrivateIcon();
+    setTimeout(cleanStalePortable, 60e3);          // 켜는 데 방해되지 않게 1분 뒤
     createWindow();
     createTray();
     autoInstallCharacters(cfg);

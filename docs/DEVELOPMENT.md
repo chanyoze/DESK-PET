@@ -379,6 +379,9 @@ main 에 푸시하면 끝이다 (`.github/workflows/release.yml`).
 
 - 쓰는 쪽에서 무슨 일이 일어나는지는 [README 의 업데이트](../README.md#업데이트)
 - 시험용: `DESKPET_UPDATE_FEED`(릴리스 목록 주소) · `DESKPET_USERDATA`(설정 폴더) 환경 변수, `--update-now`(확인 창 없이 바로 설치)
+- **뒷정리** — 윈도우: 새 앱이 옛 exe 를 지운다 (`cleanupOld`). 받다 끊기면 `.part` 를 지운다. 맥: 바꿔 끼운 뒤 받은 zip · 푼 앱이 든 임시 폴더를 지운다.
+  포터블 exe 가 실행할 때 푸는 `%TEMP%\<무작위>` (약 330MB) 는 정상 종료면 실행기가 지우지만, 강제 종료 · 전원 꺼짐이면 남는다 →
+  앱이 켜지고 1분 뒤 지난 것을 지운다 (`cleanStalePortable` — 실행 중인 exe 는 쓰기로 못 열린다는 걸로 다른 DeskPet 이 쓰는 폴더는 건너뛴다)
 
 ### 맥 (macOS)
 

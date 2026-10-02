@@ -90,18 +90,25 @@ async function download(url, dest, onProgress) {
   const tmp = dest + '.part';
   const out = fs.createWriteStream(tmp);
   let got = 0, lastTick = 0;
-  const reader = res.body.getReader();
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    got += value.length;
-    if (!out.write(Buffer.from(value))) await new Promise((r) => out.once('drain', r));
-    if (total && onProgress && Date.now() - lastTick > 400) { lastTick = Date.now(); onProgress(got / total); }
+  try {
+    const reader = res.body.getReader();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      got += value.length;
+      if (!out.write(Buffer.from(value))) await new Promise((r) => out.once('drain', r));
+      if (total && onProgress && Date.now() - lastTick > 400) { lastTick = Date.now(); onProgress(got / total); }
+    }
+    await new Promise((r, j) => out.end((e) => (e ? j(e) : r())));
+    if (total && got !== total) throw new Error('받다가 끊겼다 (' + got + '/' + total + ')');
+    fs.renameSync(tmp, dest);
+    return dest;
+  } catch (e) {
+    // 받다 만 파일을 남기지 않는다 (윈도우는 exe 옆 — 바탕화면일 수 있다)
+    out.destroy();
+    try { fs.unlinkSync(tmp); } catch { /* 없으면 그만 */ }
+    throw e;
   }
-  await new Promise((r, j) => out.end((e) => (e ? j(e) : r())));
-  if (total && got !== total) throw new Error('받다가 끊겼다 (' + got + '/' + total + ')');
-  fs.renameSync(tmp, dest);
-  return dest;
 }
 
 /** 설치할 수 있는 실행 방식인지 (개발 실행 · 설치형 아님은 안내만) */
@@ -158,15 +165,26 @@ async function installWin(info, onProgress) {
 async function installMac(info, onProgress) {
   const work = fs.mkdtempSync(path.join(os.tmpdir(), 'deskpet-update-'));
   const zip = path.join(work, info.asset.name);
-  await download(info.asset.url, zip, onProgress);
-  verify(zip, info.asset);
+  try {
+    await download(info.asset.url, zip, onProgress);
+    verify(zip, info.asset);
+  } catch (e) {
+    fs.rmSync(work, { recursive: true, force: true });       // 받다 만 zip 을 남기지 않는다
+    throw e;
+  }
   const unzip = path.join(work, 'app');
-  await new Promise((r, j) => {
-    const p = spawn('/usr/bin/ditto', ['-x', '-k', zip, unzip]);
-    p.on('exit', (c) => (c === 0 ? r() : j(new Error('압축 풀기 실패 ' + c))));
-  });
-  const newApp = fs.readdirSync(unzip).map((n) => path.join(unzip, n)).find((p) => p.endsWith('.app'));
-  if (!newApp) throw new Error('zip 안에 .app 이 없다');
+  let newApp;
+  try {
+    await new Promise((r, j) => {
+      const p = spawn('/usr/bin/ditto', ['-x', '-k', zip, unzip]);
+      p.on('exit', (c) => (c === 0 ? r() : j(new Error('압축 풀기 실패 ' + c))));
+    });
+    newApp = fs.readdirSync(unzip).map((n) => path.join(unzip, n)).find((p) => p.endsWith('.app'));
+    if (!newApp) throw new Error('zip 안에 .app 이 없다');
+  } catch (e) {
+    fs.rmSync(work, { recursive: true, force: true });
+    throw e;
+  }
   // 지금 앱 번들 — …/DeskPet.app/Contents/MacOS/DeskPet
   const curApp = path.resolve(app.getPath('exe'), '..', '..', '..');
   let writable = true;
@@ -184,6 +202,7 @@ async function installMac(info, onProgress) {
     'mv "' + curApp + '" "' + curApp + '.old" && mv "' + newApp + '" "' + curApp + '" && rm -rf "' + curApp + '.old"',
     'xattr -cr "' + curApp + '" 2>/dev/null',
     'open "' + curApp + '" --args --updated-from=' + app.getVersion(),
+    'rm -rf "' + work + '"',                                  // 받은 zip · 푼 앱 · 이 스크립트 (수백 MB)
     '',
   ].join('\n'), { mode: 0o755 });
   spawn('/bin/sh', [script], { detached: true, stdio: 'ignore' }).unref();
