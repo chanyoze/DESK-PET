@@ -1,0 +1,77 @@
+{
+  "id": "pokemon-marshtomp",
+  "source": "PMDCollab SpriteCollab",
+  "dex": "0259",
+  "scale": 4,
+  "credits": [
+    "Marshtomp (#0259) sprites: CHUNSOFT",
+    "PMDCollab SpriteCollab — https://sprites.pmdcollab.org/"
+  ],
+  "clips": {
+    "idle": { "anim": "Idle", "left": 7, "right": 1 },
+    "idle2": { "anim": "Idle", "row": 0 },
+    "walk": { "anim": "Walk", "left": 6, "right": 2 },
+    "run": { "anim": "Walk", "left": 6, "right": 2, "speed": 1.8 },
+    "sleep": { "anim": "Sleep", "row": 0 },
+    "pet": { "anim": "Hop", "left": 7, "right": 1 },
+    "spin": { "anim": "Rotate", "row": 0 },
+    "hurt": { "anim": "Hurt", "left": 7, "right": 1 },
+    "work": { "anim": "Charge", "row": 0 },
+    "pounce": { "anim": "Attack", "left": 6, "right": 2, "once": true }
+  },
+  "manifest": {
+    "name": "늪짱이",
+    "walkSpeed": 40,
+    "runSpeed": 110,
+    "animations": {
+      "idle": "idle",
+      "idle2": "idle2",
+      "walk": "walk",
+      "run": "run",
+      "sit": "idle2",
+      "sleep": "sleep",
+      "pet": "pet",
+      "special": ["pet", "spin"],
+      "drag": "hurt",
+      "fall": "hurt",
+      "climb": "walk",
+      "work": "work",
+      "pounce": "pounce"
+    },
+    "lines": {
+      "idle": ["늪짱!", "(진흙을 조물조물)", "여기 촉촉해서 좋다.", "물 한 잔 마셔. 나도 마실래.", "느긋하게 가자. 늪짱."],
+      "walk": ["철벅철벅… 산책 중.", "진흙 길이 제일 좋아.", "천천히 가도 다 도착해."],
+      "run": ["늪짱! 늪짱!", "물웅덩이 발견! 달려!", "헉헉… 생각보다 빠르지?"],
+      "sit": ["잠깐 앉았다 갈게.", "여기 시원하다."],
+      "sleep": ["쿠울… 늪…", "…(뻐끔뻐끔)…", "진흙 이불 좋아… 쿨…"],
+      "morning": ["좋은 아침! 오늘도 촉촉하게 가자.", "일어났어? 세수부터 하자. 늪짱!"],
+      "afternoon": ["점심 먹었어? 물도 챙겨 마시고.", "오후엔 나른하지. 진흙 목욕하고 싶다."],
+      "evening": ["오늘도 고생했어. 늪짱.", "해가 진다. 슬슬 마무리하자."],
+      "night": ["늦었어. 이제 쉬자.", "밤엔 조용히 옆에 있을게.", "눈 아프겠다. 조금만 하고 자."],
+      "longRun": ["오래 켜 뒀네. 기지개 한 번 켜자.", "계속 옆에 있었어. 늪짱."],
+      "picked": ["늪!?", "어, 어디 가?", "내려 줘! 발이 마르잖아!"],
+      "thrown": ["늪짜아앙─!", "날아간다아!", "으아아 철퍼덕!"],
+      "landed": ["…철퍼덕. 괜찮아.", "튼튼하니까 괜찮아. 늪짱.", "후, 깜짝이야."],
+      "petted": ["헤헤, 좋아. 늪짱!", "(지느러미를 파닥파닥)", "더 쓰다듬어 줘!"],
+      "woken": ["늪!? …아, 너구나.", "음냐… 벌써 아침?", "안 잤어. 물속 명상 중이었어."],
+      "together": ["같이 있으니까 든든해. 늪짱."]
+    },
+    "claude": {
+      "done": ["늪짱! 다 끝났대. 확인해 봐!", "끝났어! 칭찬해 줘."],
+      "long": ["{m}분 기다렸어. 끝났어! 늪짱!", "오래 걸렸지만 끝까지 지켜봤어."],
+      "sleepy": ["늪!? …아, 끝났대! 안 잤어.", "쿠울… 늪!? 끝났어!"],
+      "fail": ["늪늪! 뭔가 멈췄어!", "…으. 오류가 났나 봐. 같이 보자."],
+      "permission": ["늪짱! 허락이 필요하대!", "이거 해도 되냐고 물어봐."],
+      "waiting": ["네 대답 기다리고 있어. 늪짱.", "…뻐끔뻐끔 기다리는 중."],
+      "noWindow": ["그 창을 못 찾겠어…"]
+    },
+    "recap": {
+      "some": ["정각이야! 남은 일 {n}개. 늪짱!", "잊지 않게 알려 줄게. 남은 거 {n}개."],
+      "now": ["남은 일 {n}개야."],
+      "none": ["할 일 다 끝났어! 대단해. 늪짱!", "남은 거 없어. 물 마시러 가자!"],
+      "empty": ["적어 둔 할 일이 없어."],
+      "urgent": ["{t는} {left} 안에 해야 해! 늪짱!", "{t}, {left} 남았어. 힘내!"],
+      "over": ["{t는} 벌써 지났어. 괜찮아, 지금 하자."]
+    }
+  }
+}

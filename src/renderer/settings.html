@@ -41,6 +41,13 @@
     .key.off { color: #6b7590; }
     .badge { font-size: 11.5px; padding: 2px 8px; border-radius: 9px; background: #2f3549; color: #a8b2c8; }
     .badge.ok { background: rgba(64, 192, 87, .18); color: #8ce99a; }
+    .chars { display: flex; flex-direction: column; gap: 4px; margin: 4px 0 6px; }
+    .char { display: flex; align-items: center; gap: 8px; padding: 5px 8px; background: #161a26; border-radius: 7px; }
+    .char.hidden .cname { color: #6b7590; }
+    .char .cname { min-width: 90px; }
+    .char button.btn { padding: 3px 9px; font-size: 12px; }
+    button.btn.primary { background: #3b5bdb; color: #fff; }
+    button.btn.primary:hover { background: #4c6ef5; }
     #toast { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); background: #3b5bdb; color: #fff; padding: 6px 14px; border-radius: 8px; font-size: 12.5px; opacity: 0; transition: opacity .2s; pointer-events: none; }
     #toast.show { opacity: 1; }
   </style>
@@ -51,6 +58,7 @@
   <script>
     const api = window.prefsAPI;
     let st = null;
+    let chars = [];           // 캐릭터 관리 목록
     let capturing = null;     // 단축키를 새로 받는 중인 탭
 
     const el = (tag, attrs, ...kids) => {
@@ -134,8 +142,35 @@
       root.innerHTML = '';
       const add = (...n) => root.append(...n);
 
-      // 캐릭터
+      // 캐릭터 목록 — 바꾸기 · 숨기기 · 고치기 · 지우기, 내 그림으로 만들기
       add(el('h2', {}, '캐릭터'));
+      const KIND = { bundled: '기본', downloaded: '받은 것', made: '내가 만든', user: '직접 넣은' };
+      const box = el('div', { class: 'chars' });
+      for (const c of chars) {
+        const acts = [];
+        if (!c.main && !c.hidden) acts.push(el('button', { class: 'btn', onclick: async () => { chars = await api.charsUse(c.id); render(); toast(c.name + ' 로 바꿨어요'); } }, '주인공으로'));
+        if (c.kind === 'made') acts.push(el('button', { class: 'btn', onclick: () => api.makerOpen(c.id) }, '고치기'));
+        if (c.kind !== 'bundled') {
+          acts.push(el('button', { class: 'btn', onclick: async () => { const r = await api.charsHide(c.id, !c.hidden); chars = r.list; render(); if (r.error) toast(r.error); } }, c.hidden ? '보이기' : '숨기기'));
+        }
+        if (c.kind === 'made') {
+          acts.push(el('button', { class: 'btn danger', onclick: async (e) => {
+            const b = e.currentTarget;
+            if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = '지울까요?'; setTimeout(() => { if (b.isConnected) { delete b.dataset.armed; b.textContent = '지우기'; } }, 3000); return; }
+            const r = await api.charsRemove(c.id); chars = r.list; render(); toast(r.error || c.name + ' 지웠어요');
+          } }, '지우기'));
+        }
+        box.append(el('div', { class: 'char' + (c.hidden ? ' hidden' : '') },
+          el('span', { class: 'cname' }, c.name),
+          el('span', { class: 'badge' + (c.main ? ' ok' : '') }, c.main ? '주인공' : c.companion ? '동료' : KIND[c.kind] || c.kind),
+          c.hidden ? el('span', { class: 'note' }, '숨김') : null,
+          el('span', { class: 'spacer' }), ...acts));
+      }
+      add(box);
+      add(el('div', { class: 'row' },
+        el('button', { class: 'btn primary', onclick: () => api.makerOpen() }, '+ 내 그림으로 만들기'),
+        el('button', { class: 'btn', onclick: () => api.charsFolder() }, '캐릭터 폴더'),
+        el('span', { class: 'note' }, 'PNG · GIF 를 끌어다 놓으면 돼요')));
       add(row('크기', seg(st.sizes.map((s) => [s.value, s.label]), st.size, (v) => set('size', v, '크기를 바꿨어요 — 캐릭터가 다시 떠요'))));
       if (st.displays.length > 1) {
         const sel = el('select', { onchange: (e) => set('display', Number(e.target.value), '모니터를 옮겼어요') },
@@ -208,8 +243,10 @@
         el('button', { class: 'btn', onclick: () => api.action('data') }, '설정 폴더')));
     }
 
-    api.get().then((s) => { st = s; render(); });
-    api.onChanged(() => { if (!capturing) api.get().then((s) => { st = s; render(); }); });
+    const reload = () => Promise.all([api.get(), api.charsList()]).then(([s, c]) => { st = s; chars = c; render(); });
+    reload();
+    api.onChanged(() => { if (!capturing) reload(); });
+    window.addEventListener('focus', () => { if (!capturing) reload(); });   // 만들기 창에서 저장하고 돌아왔을 때
     window.addEventListener('beforeunload', () => { if (capturing) api.action('hk-resume'); });
     window.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !capturing) window.close(); });
   </script>

@@ -50,6 +50,10 @@ const preset = {
   sizeScale: cur.sizeScale || 1,
   modes: cur.modes || {},
 };
+// 설정 창에서 고른 취향도 그대로 (PC 마다 다른 것 — 모니터 · 자동 시작 · 할 일 · 메모 위치 — 은 빼고)
+for (const k of ['cursorMode', 'chatter', 'fps', 'gpu', 'recap', 'toastOn', 'speakOnClaude', 'hotkeys', 'todoCategories', 'clipPaused', 'updateCheck']) {
+  if (cur[k] !== undefined) preset[k] = cur[k];
+}
 if (preset.companion === preset.character) preset.companion = null;
 fs.writeFileSync(path.join(ROOT, 'preset.json'), JSON.stringify(preset, null, 2));
 console.log('[private] 기본 설정:', JSON.stringify(preset));
@@ -108,9 +112,13 @@ const config = {
  * 게임 그림이 든 아이콘일 수 있어서 저장소가 아니라 사용자 폴더에 둔다 (공개 빌드는 assets/icon.png 그대로).
  */
 const privateIcon = path.join(USER_DIR, 'private-icon.png');
+const bundledIcon = path.join(ROOT, 'private-icon.png');      // gitignore — 새 PC 에서 트레이 · 알림 아이콘으로 (main.js 가 처음 켤 때 userData 로 복사)
+fs.rmSync(bundledIcon, { force: true });
 if (fs.existsSync(privateIcon)) {
   config.win = { ...pkg.build.win, icon: privateIcon };
-  console.log('[private] 아이콘:', privateIcon);
+  fs.copyFileSync(privateIcon, bundledIcon);
+  config.files.push('private-icon.png');
+  console.log('[private] 아이콘:', privateIcon, '(exe · 트레이 · 알림)');
 }
 
 builder.build({ targets: builder.Platform.WINDOWS.createTarget('portable', builder.Arch.x64), config })

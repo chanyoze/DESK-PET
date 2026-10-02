@@ -1,0 +1,472 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <title>내 그림으로 캐릭터 만들기</title>
+  <style>
+    html, body { margin: 0; height: 100%; }
+    body {
+      background: #1d2130; color: #e8ecf5; font-family: 'Malgun Gothic', sans-serif; font-size: 13px;
+      display: grid; grid-template-columns: 1fr 300px; gap: 16px; padding: 14px 16px; box-sizing: border-box;
+    }
+    #form { overflow-y: auto; padding-right: 6px; }
+    #side { display: flex; flex-direction: column; gap: 10px; }
+    h2 { font-size: 13px; color: #8fa6ff; margin: 14px 0 6px; padding-bottom: 4px; border-bottom: 1px solid #2f3549; font-weight: 600; }
+    h2:first-child { margin-top: 0; }
+    .row { display: flex; align-items: center; gap: 10px; min-height: 32px; flex-wrap: wrap; }
+    .row > label.name { width: 92px; flex: none; color: #c3cce0; }
+    .note { color: #7d869c; font-size: 11.5px; }
+    .warn { color: #ffb36b; font-size: 12px; }
+    input[type=text], textarea {
+      background: #0f121b; color: #e8ecf5; border: 1px solid #3a4058; border-radius: 6px; padding: 5px 8px; font: inherit; outline: none;
+    }
+    input[type=text]:focus, textarea:focus { border-color: #5b7cfa; }
+    textarea { width: 100%; box-sizing: border-box; resize: vertical; min-height: 56px; }
+    input[type=range] { width: 160px; accent-color: #5b7cfa; }
+    .seg { display: inline-flex; background: #0f121b; border: 1px solid #3a4058; border-radius: 8px; padding: 2px; }
+    .seg button { border: 0; background: transparent; color: #a8b2c8; font: inherit; font-size: 12.5px; padding: 4px 10px; border-radius: 6px; cursor: pointer; }
+    .seg button.on { background: #3b5bdb; color: #fff; }
+    #pv { flex-wrap: wrap; }
+    #pv button { padding: 4px 7px; font-size: 12px; white-space: nowrap; }
+    .slot .head b { white-space: nowrap; }
+    button.btn { background: #2f3549; color: #c3cce0; border: 0; border-radius: 7px; padding: 5px 11px; font: inherit; font-size: 12.5px; cursor: pointer; }
+    button.btn:hover { background: #3b4460; color: #fff; }
+    button.btn.primary { background: #3b5bdb; color: #fff; }
+    button.btn.primary:hover { background: #4c6ef5; }
+    button.btn:disabled { opacity: .5; cursor: default; }
+    .slot { border: 1px dashed #3a4058; border-radius: 9px; padding: 8px 10px; margin-bottom: 8px; background: #181c28; }
+    .slot.over { border-color: #5b7cfa; background: #1d2440; }
+    .slot.need.empty { border-color: #8a6a3a; }
+    .slot .head { display: flex; align-items: center; gap: 8px; }
+    .slot .head b { font-weight: 600; }
+    .slot .thumbs { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
+    .slot .thumbs canvas { width: 40px; height: 40px; background: repeating-conic-gradient(#2a2f40 0 25%, #222636 0 50%) 0 0 / 10px 10px; border-radius: 4px; object-fit: contain; }
+    .slot .drop { color: #7d869c; font-size: 12px; margin-top: 4px; }
+    #preview { width: 300px; height: 300px; border-radius: 10px; background: repeating-conic-gradient(#2a2f40 0 25%, #222636 0 50%) 0 0 / 16px 16px; }
+    #status { min-height: 18px; }
+    .actions { display: flex; gap: 8px; align-items: center; margin-top: auto; }
+    label.chk { display: inline-flex; align-items: center; gap: 5px; color: #c3cce0; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <div id="form">
+    <h2>이름</h2>
+    <div class="row"><label class="name">이름</label><input type="text" id="name" maxlength="20" placeholder="예: 즌다몬"></div>
+
+    <h2>동작별 그림 — PNG · GIF 를 끌어다 놓기</h2>
+    <div class="note" style="margin-bottom:8px">GIF 는 움직이는 그대로, PNG 여러 장은 이름 순서대로 한 동작이 돼요. 대기만 있어도 돼요 — 나머지는 대기 그림으로 대신해요.</div>
+    <div id="slots"></div>
+
+    <h2>모양</h2>
+    <div class="row"><label class="name">키</label><input type="range" id="height" min="60" max="260" step="5" value="140"><span id="heightV"></span></div>
+    <div class="row"><label class="name">바라보는 쪽</label><div class="seg" id="facing"></div><span class="note">그림 속 캐릭터가 보는 방향 — 걸을 때 뒤집는 기준</span></div>
+    <div class="row"><label class="name">배경 지우기</label>
+      <label class="chk"><input type="checkbox" id="bg"> 테두리와 같은 색을 투명하게</label>
+      <input type="range" id="tol" min="4" max="90" value="32"><span class="note" id="tolV"></span>
+    </div>
+    <div class="row"><label class="name">도트 그림</label><label class="chk"><input type="checkbox" id="pixel"> 픽셀 그대로 (번지지 않게)</label></div>
+    <div class="row"><label class="name">PNG 속도</label><input type="range" id="fps" min="2" max="20" value="8"><span id="fpsV"></span><span class="note">PNG 여러 장일 때 (GIF 는 원래 속도)</span></div>
+    <div class="row"><label class="name">걷는 속도</label><input type="range" id="walk" min="15" max="90" value="40"><span id="walkV"></span></div>
+
+    <h2>혼잣말 (한 줄에 하나, 비우면 기본 대사)</h2>
+    <textarea id="lines" placeholder="안녕!&#10;오늘도 힘내자"></textarea>
+  </div>
+
+  <div id="side">
+    <canvas id="preview" width="600" height="600"></canvas>
+    <div class="seg" id="pv"></div>
+    <div id="status" class="note"></div>
+    <div class="actions">
+      <label class="chk"><input type="checkbox" id="use" checked> 저장하고 바로 주인공으로</label>
+    </div>
+    <div class="actions">
+      <span style="flex:1"></span>
+      <button class="btn" id="cancel">닫기</button>
+      <button class="btn primary" id="save">저장</button>
+    </div>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const SLOTS = [
+      { key: 'idle', label: '대기', need: true, hint: '꼭 필요해요' },
+      { key: 'walk', label: '걷기', hint: '없으면 대기 그림으로 통통 튀며 걸어요' },
+      { key: 'sleep', label: '잠', hint: '없으면 대기 그림' },
+      { key: 'drag', label: '들렸을 때', hint: '마우스로 집었을 때 · 떨어질 때. 없으면 대기 그림' },
+      { key: 'pet', label: '쓰다듬을 때', hint: '없으면 대기 그림으로 통통' },
+    ];
+    const MAX_SIDE = 640;        // 불러올 때 이보다 크면 줄인다
+    const MAX_CELL_H = 420;      // 시트 칸 높이 상한 (메모리)
+    const MAX_FRAMES = 80;
+    const state = { editId: null, facing: 'front', slots: {} };   // slots[key] = [{ src: canvas, ms }]
+    for (const s of SLOTS) state.slots[s.key] = [];
+    let processed = {};          // slots[key] → { cells: [canvas], w, h, ms: [..]|null }
+    let pvKey = 'idle', pvDir = 1;
+
+    // ── 그림 읽기 ──
+    const toCanvas = (img, w, h) => {
+      const k = Math.min(1, MAX_SIDE / Math.max(w, h));
+      const c = document.createElement('canvas');
+      c.width = Math.max(1, Math.round(w * k));
+      c.height = Math.max(1, Math.round(h * k));
+      const x = c.getContext('2d');
+      x.imageSmoothingEnabled = !$('pixel').checked;
+      x.drawImage(img, 0, 0, c.width, c.height);
+      return c;
+    };
+    async function decodeFile(file) {
+      const type = file.type || '';
+      if (/gif|webp|png/.test(type) && 'ImageDecoder' in window) {
+        try {
+          const dec = new ImageDecoder({ data: await file.arrayBuffer(), type });
+          await dec.tracks.ready;
+          const n = Math.min(MAX_FRAMES, dec.tracks.selectedTrack.frameCount || 1);
+          if (n > 1) {
+            const out = [];
+            for (let i = 0; i < n; i++) {
+              const { image } = await dec.decode({ frameIndex: i });
+              out.push({ src: toCanvas(image, image.displayWidth, image.displayHeight), ms: Math.max(20, Math.round((image.duration || 100000) / 1000)) });
+              image.close();
+            }
+            dec.close();
+            return out;
+          }
+          dec.close();
+        } catch (e) { console.warn('[maker] 움직이는 그림으로 못 읽음, 한 장으로', e.message); }
+      }
+      const bmp = await createImageBitmap(file);
+      const c = toCanvas(bmp, bmp.width, bmp.height);
+      bmp.close();
+      return [{ src: c, ms: null }];
+    }
+    async function addFiles(key, files) {
+      const list = [...files].filter((f) => /^image\//.test(f.type))
+        .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+      if (!list.length) { status('그림 파일(PNG · GIF · WEBP · JPG)을 넣어 주세요', true); return; }
+      status('읽는 중…');
+      const frames = [];
+      for (const f of list) {
+        try { frames.push(...await decodeFile(f)); } catch (e) { status(f.name + ' 을(를) 못 읽었어요', true); }
+      }
+      state.slots[key] = frames.slice(0, MAX_FRAMES);
+      if (!$('name').value.trim() && key === 'idle') $('name').value = list[0].name.replace(/\.[^.]+$/, '').slice(0, 20);
+      autoBg();
+      reprocess();
+      status(SLOTS.find((s) => s.key === key).label + ' — ' + state.slots[key].length + '장');
+    }
+
+    // ── 배경 지우기: 테두리에서부터 같은 색(허용 오차 안)을 따라가며 투명하게 ──
+    function needsBg(c) {
+      const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+      const at = (x, y) => d[(y * c.width + x) * 4 + 3];
+      return [at(0, 0), at(c.width - 1, 0), at(0, c.height - 1), at(c.width - 1, c.height - 1)].every((a) => a > 200);
+    }
+    function autoBg() {         // 처음 넣은 대기 그림의 네 귀퉁이가 꽉 차 있으면 배경 지우기를 켜 둔다
+      const f = state.slots.idle[0];
+      if (f && !$('bg').dataset.touched) $('bg').checked = needsBg(f.src);
+    }
+    function removeBg(src, tol) {
+      const c = document.createElement('canvas');
+      c.width = src.width; c.height = src.height;
+      const x = c.getContext('2d', { willReadFrequently: true });
+      x.drawImage(src, 0, 0);
+      const img = x.getImageData(0, 0, c.width, c.height), d = img.data, W = c.width, H = c.height;
+      // 기준 색: 네 귀퉁이 중 가장 흔한 색
+      const corner = [[0, 0], [W - 1, 0], [0, H - 1], [W - 1, H - 1]].map(([px, py]) => { const i = (py * W + px) * 4; return [d[i], d[i + 1], d[i + 2], d[i + 3]]; });
+      const near = (a, b) => Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) + Math.abs(a[2] - b[2]) < 30;
+      const key = corner.slice().sort((a, b) => corner.filter((q) => near(q, b)).length - corner.filter((q) => near(q, a)).length)[0];
+      if (key[3] < 10) return c;                        // 이미 투명
+      const t = tol * 3;
+      const seen = new Uint8Array(W * H), stack = [];
+      const push = (px, py) => { const p = py * W + px; if (!seen[p]) { seen[p] = 1; stack.push(p); } };
+      for (let i = 0; i < W; i++) { push(i, 0); push(i, H - 1); }
+      for (let j = 0; j < H; j++) { push(0, j); push(W - 1, j); }
+      while (stack.length) {
+        const p = stack.pop(), i = p * 4;
+        const diff = Math.abs(d[i] - key[0]) + Math.abs(d[i + 1] - key[1]) + Math.abs(d[i + 2] - key[2]);
+        if (d[i + 3] > 10 && diff > t) continue;
+        d[i + 3] = diff > t * 0.6 ? Math.min(d[i + 3], Math.round(255 * (diff - t * 0.6) / (t * 0.4))) : 0;   // 가장자리는 살짝 남겨 부드럽게
+        if (d[i + 3] > 0) continue;
+        const px = p % W, py = (p / W) | 0;
+        if (px > 0) push(px - 1, py);
+        if (px < W - 1) push(px + 1, py);
+        if (py > 0) push(px, py - 1);
+        if (py < H - 1) push(px, py + 1);
+      }
+      x.putImageData(img, 0, 0);
+      return c;
+    }
+
+    // ── 동작마다 같은 틀로 자르기 (프레임끼리 떨리지 않게 전체를 감싸는 영역) ──
+    function processSlot(frames) {
+      if (!frames.length) return null;
+      const bg = $('bg').checked, tol = +$('tol').value;
+      const imgs = frames.map((f) => (bg ? removeBg(f.src, tol) : f.src));
+      let L = Infinity, T = Infinity, R = -1, B = -1;
+      for (const c of imgs) {
+        const d = c.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, c.width, c.height).data;
+        for (let y = 0; y < c.height; y++) for (let x = 0; x < c.width; x++) {
+          if (d[(y * c.width + x) * 4 + 3] < 24) continue;
+          if (x < L) L = x; if (x > R) R = x; if (y < T) T = y; if (y > B) B = y;
+        }
+      }
+      if (R < 0) return null;
+      const w0 = R - L + 1, h0 = B - T + 1;
+      const k = Math.min(1, MAX_CELL_H / h0);
+      const w = Math.max(1, Math.round(w0 * k)) + 2, h = Math.max(1, Math.round(h0 * k)) + 2;
+      const cells = imgs.map((c) => {
+        const o = document.createElement('canvas');
+        o.width = w; o.height = h;
+        const x = o.getContext('2d');
+        x.imageSmoothingEnabled = !$('pixel').checked;
+        x.drawImage(c, L, T, w0, h0, 1, 1, w - 2, h - 2);
+        return o;
+      });
+      const ms = frames.every((f) => f.ms) ? frames.map((f) => f.ms) : null;
+      return { cells, w, h, ms };
+    }
+    let reTimer = null;
+    function reprocess() {
+      clearTimeout(reTimer);
+      reTimer = setTimeout(() => {
+        processed = {};
+        for (const s of SLOTS) processed[s.key] = processSlot(state.slots[s.key]);
+        renderSlots();
+      }, 60);
+    }
+
+    // ── 저장할 모양 (sprite-view.js 의 매니페스트) ──
+    function build() {
+      const idle = processed.idle;
+      if (!idle) throw new Error('대기 그림을 넣어 주세요');
+      const name = $('name').value.trim();
+      if (!name) throw new Error('이름을 적어 주세요');
+      const facing = state.facing;
+      const sheets = {}, data = {}, clips = {};
+      const fps = +$('fps').value;
+      const timing = (p) => (p.ms ? { frameMs: p.ms } : { fps });
+      // 칸 크기는 키에 맞춰 줄인다 (크게 설정까지 선명할 만큼만 — 큰 GIF 가 메모리를 잡아먹지 않게)
+      const capH = Math.min(MAX_CELL_H, Math.round(+$('height').value * 1.6));
+      for (const s of SLOTS) {
+        const p0 = processed[s.key];
+        if (!p0) continue;
+        const k = Math.min(1, capH / p0.h);
+        const w = Math.max(1, Math.round(p0.w * k)), h = Math.max(1, Math.round(p0.h * k));
+        const n = p0.cells.length, cols = Math.min(n, 8), rowsPer = Math.ceil(n / cols);
+        const sheet = document.createElement('canvas');
+        sheet.width = w * cols;
+        sheet.height = h * rowsPer * (facing === 'front' ? 1 : 2);
+        const x = sheet.getContext('2d');
+        x.imageSmoothingEnabled = !$('pixel').checked;
+        x.imageSmoothingQuality = 'high';
+        const at = (i, mirrored) => [i % cols, Math.floor(i / cols) + (mirrored ? rowsPer : 0)];
+        p0.cells.forEach((c, i) => {
+          const [cx, cy] = at(i, false);
+          x.drawImage(c, cx * w, cy * h, w, h);
+          if (facing !== 'front') {               // 아래쪽 절반 = 좌우 뒤집은 그림
+            const [mx, my] = at(i, true);
+            x.save(); x.translate((mx + 1) * w, my * h); x.scale(-1, 1); x.drawImage(c, 0, 0, w, h); x.restore();
+          }
+        });
+        const own = p0.cells.map((_, i) => at(i, false)), flip = p0.cells.map((_, i) => at(i, true));
+        const lists = facing === 'front' ? { frames: own } : facing === 'right' ? { right: own, left: flip } : { left: own, right: flip };
+        sheets[s.key] = { file: s.key + '.png', frame: [w, h] };
+        data[s.key] = sheet.toDataURL('image/png').split(',')[1];
+        clips[s.key] = { sheet: s.key, ...timing(p0), ...lists };
+        const p = p0;
+        if (p.cells.length === 1 && (s.key === 'idle' || s.key === 'sleep')) clips[s.key].bob = 1;
+      }
+      // 없는 동작은 대기 그림으로 — 걷기 · 쓰다듬기는 통통 튀며
+      const idleClip = clips.idle;
+      if (!clips.walk) clips.walk = { ...idleClip, bob: 0, hop: 1, fps: Math.max(idleClip.fps || 8, 8) };
+      if (!clips.pet) clips.pet = { ...idleClip, bob: 0, hop: 1 };
+      const lines = $('lines').value.split(/\r?\n/).map((t) => t.trim()).filter(Boolean).slice(0, 40);
+      const manifest = {
+        name, height: +$('height').value, walkSpeed: +$('walk').value, smoothing: !$('pixel').checked,
+        sheets, clips,
+        animations: {
+          idle: 'idle', walk: 'walk', sit: 'idle', climb: 'walk', work: 'idle',
+          sleep: clips.sleep ? 'sleep' : 'idle',
+          pet: 'pet', special: 'pet',
+          drag: clips.drag ? 'drag' : 'idle', fall: clips.drag ? 'drag' : 'idle',
+        },
+        makerOpts: { facing, bg: $('bg').checked, tol: +$('tol').value, pixel: $('pixel').checked, fps, slots: SLOTS.filter((s) => processed[s.key]).map((s) => s.key) },
+      };
+      if (lines.length) manifest.lines = { idle: lines, walk: lines, sit: lines };
+      return { manifest, sheets: data };
+    }
+
+    // ── 미리보기 ──
+    const pv = $('preview'), pctx = pv.getContext('2d');
+    let t0 = performance.now();
+    function drawPreview(now) {
+      const t = (now - t0) / 1000;
+      pctx.setTransform(1, 0, 0, 1, 0, 0);
+      pctx.clearRect(0, 0, pv.width, pv.height);
+      const fallback = { walk: 'idle', sleep: 'idle', drag: 'idle', pet: 'idle' };
+      let key = pvKey, p = processed[key];
+      const hop = !p && (key === 'walk' || key === 'pet');
+      if (!p) { key = fallback[key] || 'idle'; p = processed[key]; }
+      if (p) {
+        let idx = 0;
+        if (p.ms) { const total = p.ms.reduce((a, b) => a + b, 0); let m = (t * 1000) % total; while (m >= p.ms[idx]) { m -= p.ms[idx]; idx++; } }
+        else idx = Math.floor(t * +$('fps').value) % p.cells.length;
+        const c = p.cells[Math.min(idx, p.cells.length - 1)];
+        const figH = Math.min(+$('height').value * 1.6, 420);
+        const s = figH / p.h;
+        const flip = state.facing !== 'front' && ((state.facing === 'right') !== (pvDir > 0));
+        const ground = 540, cx = 300;
+        pctx.globalAlpha = 0.25; pctx.fillStyle = '#000';
+        pctx.beginPath(); pctx.ellipse(cx, ground, p.w * s * 0.3, 10, 0, 0, Math.PI * 2); pctx.fill(); pctx.globalAlpha = 1;
+        const lift = hop ? Math.sin(((t * 2.6) % 1) * Math.PI) * p.h * 0.09 * s : 0;
+        const breathe = p.cells.length === 1 && !hop ? 1 + Math.sin(t * 2.4) * 0.012 : 1;
+        pctx.translate(cx, ground - lift);
+        pctx.scale(flip ? -s : s, s * breathe);
+        pctx.imageSmoothingEnabled = !$('pixel').checked;
+        pctx.drawImage(c, -p.w / 2, -p.h);
+      } else {
+        pctx.fillStyle = '#6b7590'; pctx.font = '28px Malgun Gothic'; pctx.textAlign = 'center';
+        pctx.fillText('대기 그림을 넣어 주세요', 300, 300);
+      }
+      requestAnimationFrame(drawPreview);
+    }
+
+    // ── 화면 ──
+    const status = (t, warn) => { $('status').textContent = t; $('status').className = warn ? 'warn' : 'note'; };
+    function seg(el, options, cur, onPick) {
+      el.innerHTML = '';
+      for (const [v, label] of options) {
+        const b = document.createElement('button');
+        b.textContent = label;
+        if (v === cur) b.className = 'on';
+        b.onclick = () => onPick(v);
+        el.appendChild(b);
+      }
+    }
+    function renderPv() {
+      seg($('pv'), [['idle', '대기'], ['walkL', '← 걷기'], ['walkR', '걷기 →'], ['sleep', '잠'], ['drag', '들림'], ['pet', '쓰다듬']],
+        pvKey === 'walk' ? (pvDir < 0 ? 'walkL' : 'walkR') : pvKey,
+        (v) => { if (v === 'walkL' || v === 'walkR') { pvKey = 'walk'; pvDir = v === 'walkL' ? -1 : 1; } else pvKey = v; t0 = performance.now(); renderPv(); });
+    }
+    function renderFacing() {
+      seg($('facing'), [['left', '← 왼쪽'], ['front', '정면'], ['right', '오른쪽 →']], state.facing, (v) => { state.facing = v; renderFacing(); });
+    }
+    function renderSlots() {
+      const box = $('slots');
+      box.innerHTML = '';
+      for (const s of SLOTS) {
+        const frames = state.slots[s.key], p = processed[s.key];
+        const el = document.createElement('div');
+        el.className = 'slot' + (s.need ? ' need' : '') + (frames.length ? '' : ' empty');
+        const head = document.createElement('div');
+        head.className = 'head';
+        head.innerHTML = '<b></b><span class="note"></span><span style="flex:1"></span>';
+        head.querySelector('b').textContent = s.label;
+        head.querySelector('.note').textContent = frames.length ? frames.length + '장' + (frames.every((f) => f.ms) && frames.length > 1 ? ' (GIF)' : '') : s.hint;
+        const pick = document.createElement('button');
+        pick.className = 'btn'; pick.textContent = '파일 고르기';
+        pick.onclick = () => {
+          const inp = document.createElement('input');
+          inp.type = 'file'; inp.multiple = true; inp.accept = 'image/png,image/gif,image/webp,image/jpeg';
+          inp.onchange = () => addFiles(s.key, inp.files);
+          inp.click();
+        };
+        head.appendChild(pick);
+        if (frames.length) {
+          const clr = document.createElement('button');
+          clr.className = 'btn'; clr.textContent = '비우기';
+          clr.onclick = () => { state.slots[s.key] = []; reprocess(); };
+          head.appendChild(clr);
+        }
+        el.appendChild(head);
+        if (p) {
+          const th = document.createElement('div');
+          th.className = 'thumbs';
+          for (const c of p.cells.slice(0, 24)) {
+            const t = document.createElement('canvas');
+            const k = Math.min(80 / c.width, 80 / c.height);
+            t.width = Math.max(1, Math.round(c.width * k)); t.height = Math.max(1, Math.round(c.height * k));
+            t.getContext('2d').drawImage(c, 0, 0, t.width, t.height);
+            th.appendChild(t);
+          }
+          if (p.cells.length > 24) { const more = document.createElement('span'); more.className = 'note'; more.textContent = '+' + (p.cells.length - 24); th.appendChild(more); }
+          el.appendChild(th);
+        } else {
+          const d = document.createElement('div');
+          d.className = 'drop'; d.textContent = '여기에 끌어다 놓기';
+          el.appendChild(d);
+        }
+        el.addEventListener('dragover', (e) => { e.preventDefault(); el.classList.add('over'); });
+        el.addEventListener('dragleave', () => el.classList.remove('over'));
+        el.addEventListener('drop', (e) => { e.preventDefault(); el.classList.remove('over'); addFiles(s.key, e.dataTransfer.files); });
+        box.appendChild(el);
+      }
+    }
+    // 칸 밖에 떨어뜨려도 창이 그림으로 바뀌지 않게
+    window.addEventListener('dragover', (e) => e.preventDefault());
+    window.addEventListener('drop', (e) => e.preventDefault());
+
+    const bindRange = (id, fmt, after) => { const f = () => { $(id + 'V').textContent = fmt($(id).value); if (after) after(); }; $(id).addEventListener('input', f); f(); };
+    bindRange('height', (v) => v + 'px');
+    bindRange('fps', (v) => v + '장/초');
+    bindRange('walk', (v) => v);
+    bindRange('tol', (v) => '오차 ' + v, reprocess);
+    $('bg').addEventListener('change', () => { $('bg').dataset.touched = '1'; reprocess(); });
+    $('pixel').addEventListener('change', reprocess);
+
+    // ── 고치기: 저장된 시트를 칸으로 다시 잘라 불러온다 (배경은 이미 지워져 있다) ──
+    async function loadEdit(r) {
+      const m = r.manifest, o = m.makerOpts || {};
+      state.editId = r.edit;
+      $('name').value = m.name || '';
+      $('height').value = m.height || 140; $('walk').value = m.walkSpeed || 40;
+      $('pixel').checked = !!o.pixel; $('bg').checked = false; $('bg').dataset.touched = '1';
+      $('fps').value = o.fps || 8;
+      state.facing = o.facing || 'front';
+      $('lines').value = ((m.lines && m.lines.idle) || []).join('\n');
+      for (const key of o.slots || Object.keys(m.sheets)) {
+        const def = m.sheets[key], clip = m.clips[key];
+        if (!def || !r.sheets[key]) continue;
+        const img = new Image();
+        await new Promise((ok) => { img.onload = ok; img.src = r.sheets[key]; });
+        const [w, h] = def.frame;
+        // 원래 방향 그림의 칸 목록 (뒤집은 쪽 말고)
+        const own = (clip && (clip.frames || (state.facing === 'left' ? clip.left : clip.right))) || [[0, 0]];
+        state.slots[key] = own.map(([col, row], i) => {
+          const c = document.createElement('canvas');
+          c.width = w; c.height = h;
+          c.getContext('2d').drawImage(img, col * w, row * h, w, h, 0, 0, w, h);
+          return { src: c, ms: clip && clip.frameMs ? clip.frameMs[i] : null };
+        });
+      }
+      for (const id of ['height', 'walk', 'fps']) $(id).dispatchEvent(new Event('input'));
+      $('use').checked = false;
+      document.title = m.name + ' 고치기';
+    }
+    async function init() {
+      for (const s of SLOTS) state.slots[s.key] = [];
+      state.editId = null; state.facing = 'front';
+      const r = await window.makerAPI.init();
+      if (r && r.edit) await loadEdit(r);
+      renderFacing(); renderPv(); reprocess();
+    }
+
+    $('save').onclick = async () => {
+      let out;
+      try { out = build(); } catch (e) { status(e.message, true); return; }
+      $('save').disabled = true;
+      status('저장하는 중…');
+      const r = await window.makerAPI.save({ id: state.editId, manifest: out.manifest, sheets: out.sheets, use: $('use').checked });
+      $('save').disabled = false;
+      if (!r.ok) { status('저장 못 했어요: ' + r.error, true); return; }
+      state.editId = r.id;
+      status($('use').checked ? '저장했어요 — 캐릭터가 바뀌었어요' : '저장했어요 — 메뉴 "캐릭터" 에서 고를 수 있어요');
+    };
+    $('cancel').onclick = () => window.makerAPI.close();
+    window.addEventListener('keydown', (e) => { if (e.key === 'Escape') window.makerAPI.close(); });
+    window.makerAPI.onReset(init);
+    init();
+    requestAnimationFrame(drawPreview);
+  </script>
+</body>
+</html>

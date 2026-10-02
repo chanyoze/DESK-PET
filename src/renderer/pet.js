@@ -1185,7 +1185,8 @@
     sections.push({
       title: pets.length > 1 ? '캐릭터 (이 아이)' : '캐릭터',
       fold: 'char',
-      items: roster.map((c) => ({ label: c.name, value: 'char:' + c.id, checked: c.id === p.id })),
+      items: roster.map((c) => ({ label: c.name, value: 'char:' + c.id, checked: c.id === p.id }))
+        .concat([{ label: '+ 내 그림으로 만들기…', value: 'act:maker' }]),
     });
     // 함께 다니기 — 주인공 말고 한 명 더
     sections.push({
@@ -1310,6 +1311,7 @@
       else if (arg === 'update') window.petAPI.updatePrompt();
       else if (arg === 'whatsnew') window.petAPI.whatsNew();
       else if (arg === 'settings') window.petAPI.openSettings();
+      else if (arg === 'maker') window.petAPI.openMaker();
       else if (arg === 'inbox') setTimeout(() => inbox.open(), 0);   // 이 메뉴가 닫힌 뒤에 연다
       else if (arg === 'chat') {
         chatOn = !chatOn;

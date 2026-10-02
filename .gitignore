@@ -18,3 +18,4 @@ site/character.js
 
 # 개인 빌드 (게임 에셋 포함) — 절대 커밋·배포하지 않는다
 preset.json
+private-icon.png

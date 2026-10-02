@@ -58,6 +58,7 @@ src/
   notes-store.js           todo.md(일자별 · 분류 · 언젠가 · 반복 · 기한 · 설명) 읽고 쓰기 · 반복 만들기 · 한꺼번에 옮기기 · notes.json (electron 없이 시험 가능)
   editor-window.js         글 입력 창 (투명 창은 글자를 못 받아서 따로 띄운다) — preload-editor.js
   settings-window.js       설정 창 (renderer/settings.html · preload-settings.js) — main.js 의 prefs:get / prefs:set
+  maker-window.js          내 그림으로 캐릭터 만들기 창 (renderer/maker.html · preload-maker.js) — main.js 의 maker:* · chars:*
   palette-window.js        도구 팔레트 창 — 빠른 메모 · 클립보드 기록 · 바로가기 (renderer/palette.html · preload-palette.js)
   clipboard-history.js     클립보드 기록 (메모리에만, 📌 고정만 clipboard-pins.json) — Electron 44 는 클립보드가 Promise
   shortcuts-store.js       바로가기 목록 shortcuts.json — 주소 · 경로 · 명령 종류 판별
@@ -72,6 +73,7 @@ src/
     editor.html            입력 창 화면 (할 일: 날짜 · 언젠가 · 반복 · 분류 · 기한 / 메모: 색)
     settings.html          설정 창 화면 — 캐릭터 · 할 일 알림 · 알림 · 도구(단축키) · 성능 · 일반
     palette.html           도구 팔레트 화면 (탭 셋)
+    maker.html             캐릭터 만들기 — GIF 풀기(ImageDecoder) · 배경 지우기 · 자르기 · 좌우 뒤집은 줄 · 시트 만들기 · 미리보기
     character.js           자체 파츠 리그 — 파츠 정의 · 포즈 · IK · 그리기
     ui.js                  말풍선(대화 · 알림 카드) · 좌클릭 메뉴(접는 섹션)
     chatter.js             혼잣말 (상태·시간대별 대사)
@@ -299,6 +301,20 @@ npm run extract-rpgmv -- "<게임 폴더>" tools/recipes/termina/samarie.json --
 그래도 원본 해상도가 상한이다. `height`를 원본이 감당하는 크기에 가깝게 잡을수록
 선명하다. 설정 창의 **크기** 에서 바꿔 보고 정하면 된다.
 
+## 내 그림으로 만들기 (maker)
+
+쓰는 사람이 PNG · GIF 만으로 `sprite` 캐릭터를 만드는 창 (`maker-window.js` · `renderer/maker.html`). 그림 처리는 전부 창(렌더러)에서 하고
+메인은 받은 시트 png 와 매니페스트를 `userData/characters/my-<시각36진수>/` 에 쓴다 (`.part` 에 쓰고 옮긴다).
+
+- GIF · 움직이는 WEBP 는 `ImageDecoder` 로 프레임과 프레임 시간(`frameMs`)을 꺼낸다. 640px 넘게 크면 줄여서 읽는다, 동작당 80장까지
+- 배경 지우기: 네 귀퉁이 중 가장 흔한 색을 기준으로 테두리에서부터 이어진 비슷한 색을 투명하게 (경계는 살짝 반투명)
+- 한 동작의 모든 프레임을 감싸는 영역으로 같이 잘라서 프레임끼리 떨리지 않게. 칸 높이는 키 × 1.6 (최대 420px)
+- 시트는 한 줄 8칸 격자. 바라보는 쪽이 왼쪽/오른쪽이면 아래 절반에 좌우 뒤집은 칸을 두고 `left` · `right` 목록으로 나눈다
+- 없는 동작: 걷기 · 쓰다듬기는 대기 칸 + `hop: 1`(통통 튀기, sprite-view), 나머지는 `animations` 에서 대기로
+- 매니페스트에 `maker: 1` · `makerOpts`(방향 · 배경 · 도트 · 속도 · 쓴 칸)를 남겨 **고치기** 때 시트를 칸으로 다시 잘라 불러온다
+- 설정 창 캐릭터 목록 = `chars:admin` — 종류 bundled · downloaded(CREDITS.txt 있음) · made(`my-`) · user.
+  숨기기는 `"hidden": true` (받은 것은 지우면 다시 받으므로 숨기기만), 지우기는 made 만, 나와 있는 캐릭터는 둘 다 막는다
+
 ## 포켓몬 (불가사의 던전 스타일 스프라이트)
 
 [PMDCollab SpriteCollab](https://github.com/PMDCollab/SpriteCollab) 의 팬 스프라이트로 포켓몬 캐릭터를 만든다.
@@ -306,7 +322,15 @@ npm run extract-rpgmv -- "<게임 폴더>" tools/recipes/termina/samarie.json --
 
 ```bash
 node tools/pmd-import.js tools/recipes/pokemon/herdier.json      # 하데리어 (#0507)
+node tools/pmd-import.js tools/recipes/pokemon/marshtomp.json    # 늪짱이 (#0259)
+node tools/pmd-import.js tools/recipes/pokemon/wingull.json      # 갈모매 (#0278)
+# --out=<캐릭터 폴더 자체> 로 다른 곳에 (시험용)
 ```
+
+- 맥 공개판 프리셋(`tools/presets/herdier.json`)의 `autoInstall` 에 셋 다 있다 — 지인 맥이 업데이트하면 처음 켤 때 받는다.
+  `onlyCharacters` 는 **앱에 든** 캐릭터(기본 고양이)만 가리고, 사용자 폴더 캐릭터(받은 것 · 내가 만든 것)는 늘 보인다
+- `autoInstall` · `onlyCharacters` 는 **빌드가 정하는 값**이라 settings.json 에 저장하지 않고 늘 지금 빌드의 preset.json 을 따른다
+  (예전엔 저장돼서, 프리셋을 바꿔도 옛 통파일의 "하데리어만" 이 남았다 — `settings.js` BUILD_KEYS)
 
 - 방향 줄: `0` 아래 · `1` 오른쪽 아래 · `2` 오른쪽 · `3` 오른쪽 위 · `4` 위 · `5` 왼쪽 위 · `6` 왼쪽 · `7` 왼쪽 아래
 - 레시피 `clips` 의 `{ "anim": "Walk", "left": 6, "right": 2 }` 가 칸 목록 + `frameMs` 로 펼쳐진다. `speed` 로 빠르게

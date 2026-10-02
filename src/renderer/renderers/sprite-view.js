@@ -15,6 +15,7 @@
  *           두 사람이 한 칸에 있는 그림을 둘의 위치에 맞출 때).
  *           frameMs: [ms, ...] 를 주면 fps 대신 칸마다 머무는 시간을 따로 쓴다
  *           (불가사의 던전 스프라이트처럼 프레임 길이가 제각각인 동작).
+ *           hop: 1 이면 통통 튀며 그린다 (걷기 그림이 없는 캐릭터 — "내 그림 넣기"가 대기 그림으로 걷기를 만들 때).
  *
  * 발 위치는 칸마다 알파를 훑어서 찾는다. 게임마다 칸 안의 여백이 제각각이라
  * 사람이 맞추면 동작이 바뀔 때마다 캐릭터가 위아래로 튄다.
@@ -137,6 +138,7 @@
           sheetName: def.sheet,
           fps: def.fps || 6,
           bob: def.bob || 0,
+          hop: def.hop || 0,
           once: !!def.once,
           mirror: !!def.mirror,
           // 칸마다 끝나는 시각(ms) 누적 — frameMs 가 있을 때만
@@ -168,10 +170,11 @@
         below = Math.max(below, c.sheet.fh - c.baseline);
       }
       const pad = 8;                          // 그림자 · 숨쉬기 여유
+      const lift = 1.04 + Math.max(0, ...Object.values(this.clips).map((c) => c.hop)) * 0.1;   // 통통 튀는 높이
       this.cssW = Math.ceil(maxW * this.scale + pad * 2);
-      this.cssH = Math.ceil((above + below) * this.scale * 1.04 + pad * 2);
+      this.cssH = Math.ceil((above * lift + below * 1.04) * this.scale + pad * 2);
       this.originX = this.cssW / 2;
-      this.originY = Math.ceil(above * this.scale * 1.04 + pad);
+      this.originY = Math.ceil(above * this.scale * lift + pad);
       this.smooth = character.smoothing !== false;
 
       const canvas = document.createElement('canvas');
@@ -261,6 +264,12 @@
 
       // 숨쉬기 — 발은 붙인 채 세로로만 살짝
       const breathe = clip.bob ? 1 + Math.sin(this._t * 2.4) * 0.012 * clip.bob : 1;
+
+      // 통통 튀기 — 발이 떴다 내려앉는 반복 (그림자는 바닥에 그대로)
+      if (clip.hop) {
+        const ph = (this._t * 2.6) % 1;
+        ctx.translate(0, -Math.sin(ph * Math.PI) * clip.figureH * 0.09 * clip.hop * s);
+      }
 
       ctx.imageSmoothingEnabled = this.smooth;
       ctx.imageSmoothingQuality = 'high';
