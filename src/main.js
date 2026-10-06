@@ -20,6 +20,7 @@ const palette = require('./palette-window');
 const settingsWindow = require('./settings-window');
 const makerWindow = require('./maker-window');
 const charPackage = require('./char-package');
+const askClaude = require('./ask');
 
 const DEV = process.argv.includes('--dev');
 
@@ -304,6 +305,7 @@ function buildTrayMenu() {
     { label: ('빠른 메모  ' + hotkeyLabel('memo')).trim(), click: () => palette.open('memo') },
     { label: ('클립보드 기록  ' + hotkeyLabel('clip')).trim(), click: () => palette.open('clip') },
     { label: ('바로가기  ' + hotkeyLabel('links')).trim(), click: () => palette.open('links') },
+    { label: ('Claude 에게 물어보기  ' + hotkeyLabel('ask')).trim(), click: () => palette.open('ask') },
     { type: 'separator' },
     { label: '할 일 추가…', click: () => win?.webContents.send('pet:command', 'todo:add') },
     { label: '지금 할 일 정리해줘', click: () => sendRecap('manual') },
@@ -1074,7 +1076,7 @@ if (!app.requestSingleInstanceLock()) {
       console.log('[notify] say:', msg.mood, msg.source || '', msg.text);
       if (msg.source && msg.level === 'fail') toast(msg.source + ' 실패', msg.text);
       win?.webContents.send('pet:say', msg);
-    }, onClaudeEvent);
+    }, onClaudeEvent, addFromOutside);
 
     // 이미 연결돼 있으면 이 버전에 맞춰 다시 건다 — 스크립트 내용 · 포트 · 거는 이벤트가 바뀌었을 수 있다.
     // install 은 우리 훅만 걷어내고 다시 넣으므로 몇 번을 불러도 같다.
@@ -1103,6 +1105,7 @@ if (!app.requestSingleInstanceLock()) {
 
     settings.onSave((patch) => { if (Object.keys(patch).some((k) => PREF_KEYS.includes(k))) settingsWindow.refresh(); });
     startReminderLoop();
+    startAsk();
     clipHistory.start(app.getPath('userData'), () => !!settings.load().clipPaused);
     registerHotkeys();
     afterUpdate();
@@ -1323,7 +1326,7 @@ ipcMain.handle('update:check', () => checkUpdate(true));
  */
 const FPS_PRESETS = ['light', 'normal', 'smooth'];
 const PREF_KEYS = ['sizeScale', 'tone', 'chatter', 'cursorMode', 'display', 'recap', 'toastOn', 'speakOnClaude',
-  'clipPaused', 'hotkeys', 'fps', 'gpu', 'updateCheck'];
+  'clipPaused', 'hotkeys', 'fps', 'gpu', 'updateCheck', 'askModel'];
 
 function prefsState() {
   const cfg = settings.load();
@@ -1348,6 +1351,7 @@ function prefsState() {
     gpuNow: gpuOn,
     autoStart: autoStartStatus(),
     updateCheck: cfg.updateCheck !== false,
+    askModel: ['sonnet', 'haiku'].includes(cfg.askModel) ? cfg.askModel : '',
     paths: { userData: app.getPath('userData') },
   };
 }
@@ -1403,6 +1407,7 @@ ipcMain.handle('prefs:set', (_e, key, value) => {
     case 'clipPaused': settings.save({ clipPaused: !!value }); break;
     case 'gpu': settings.save({ gpu: ['on', 'off'].includes(value) ? value : 'auto' }); break;
     case 'updateCheck': settings.save({ updateCheck: !!value }); break;
+    case 'askModel': settings.save({ askModel: ['sonnet', 'haiku'].includes(value) ? value : '' }); break;
     case 'autoStart': if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: !!value, path: loginExe() }); break;
     case 'hotkey': {
       const tab = value && value.tab;
@@ -1630,6 +1635,7 @@ const HOTKEYS_DEFAULT = {
   memo: 'CommandOrControl+Alt+Space',
   clip: 'CommandOrControl+Alt+V',
   links: 'CommandOrControl+Alt+O',
+  ask: 'CommandOrControl+Alt+Q',
 };
 const hotkeys = () => ({ ...HOTKEYS_DEFAULT, ...(settings.load().hotkeys || {}) });
 const hotkeyLabel = (tab) => (hotkeys()[tab] || '').replace('CommandOrControl', IS_MAC ? 'Cmd' : 'Ctrl');
@@ -1656,7 +1662,7 @@ function registerHotkeys(quiet) {
 
 ipcMain.handle('palette:init', () => ({
   tab: palette.initialTab(),
-  hotkeys: { memo: hotkeyLabel('memo'), clip: hotkeyLabel('clip'), links: hotkeyLabel('links') },
+  hotkeys: { memo: hotkeyLabel('memo'), clip: hotkeyLabel('clip'), links: hotkeyLabel('links'), ask: hotkeyLabel('ask') },
 }));
 ipcMain.on('palette:close', () => palette.close());
 ipcMain.handle('palette:open', (_e, tab) => palette.open(tab) && true);
@@ -1679,6 +1685,95 @@ ipcMain.handle('memo:save', (_e, m) => {
   win?.webContents.send('pet:say', { text: m.target === 'note' ? '메모 붙여 뒀어' : m.target === 'backlog' ? '언젠가 목록에 적어 뒀어' : '오늘 할 일에 적어 뒀어', ms: 2200, quiet: true });
   return { ok: true };
 });
+
+/**
+ * 바깥에서 넣는 할 일 · 메모 (알림 서버 /todo · /note — 다른 Claude 세션, deskpet.ps1 todo · note)
+ *   todo: { text, detail?, date?: today|tomorrow|오늘|내일|YYYY-MM-DD|MM-DD, backlog?, category?, due?: HH:MM|MM-DD [HH:MM]|YYYY-MM-DD [HH:MM], repeat? }
+ *   note: { text, color? }
+ * text 가 여러 줄이면 첫 줄이 제목, 나머지는 설명 (할 일). 받으면 캐릭터가 한마디 한다.
+ */
+function addFromOutside(kind, p) {
+  const text = String(p.text || '').replace(/\r\n/g, '\n').trim();
+  if (!text) return { ok: false, error: 'text 가 비었어요' };
+  if (kind === 'note') {
+    const colors = ['yellow', 'pink', 'green', 'blue', 'gray'];
+    const list = notesStore.loadNotes(notesFile());
+    list.push({ id: 'n' + Date.now().toString(36), text: text.slice(0, 5000), color: colors.includes(p.color) ? p.color : 'yellow', x: null, y: null, collapsed: false });
+    notesStore.saveNotes(notesFile(), list);
+    if (settings.load().notesHidden) setNotesHidden(false);
+    win?.webContents.send('pet:command', 'notes:reload');
+    win?.webContents.send('pet:say', { text: '메모 하나 받아서 붙여 뒀어', ms: 3000, quiet: true });
+    console.log('[inbox] 메모 받음');
+    return { ok: true, where: '스티커 메모' };
+  }
+  const now = new Date();
+  const year = now.getFullYear();
+  const pad = (n) => String(n).padStart(2, '0');
+  const dayStr = (d) => {
+    const s = String(d || '').trim();
+    if (!s || /^(today|오늘)$/i.test(s)) return notesStore.ymd(now);
+    if (/^(tomorrow|내일)$/i.test(s)) { const t = new Date(now); t.setDate(t.getDate() + 1); return notesStore.ymd(t); }
+    let m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(s);
+    if (m) return m[1] + '-' + pad(m[2]) + '-' + pad(m[3]);
+    m = /^(\d{1,2})[-/.](\d{1,2})$/.exec(s);
+    if (m) return year + '-' + pad(m[1]) + '-' + pad(m[2]);
+    throw new Error('날짜를 모르겠어요: ' + s);
+  };
+  const repeat = p.repeat ? notesStore.normRule(p.repeat) : null;
+  if (p.repeat && !repeat) return { ok: false, error: '반복 규칙을 모르겠어요 (매일 · 평일 · 주말 · 매주 월,수 · 매월 1일)' };
+  const backlog = !repeat && (!!p.backlog || /^(backlog|언젠가|someday)$/i.test(String(p.date || '')));
+  const date = repeat || backlog ? null : dayStr(p.date);
+  let due = null;
+  if (p.due && !repeat) {
+    const s = String(p.due).trim();
+    let m = /^(\d{1,2}):(\d{2})$/.exec(s);
+    if (m) due = (date || notesStore.ymd(now)) + ' ' + pad(m[1]) + ':' + m[2];
+    else {
+      m = /^(.+?)(?:\s+(\d{1,2}):(\d{2}))?$/.exec(s);
+      due = dayStr(m[1]) + (m[2] ? ' ' + pad(m[2]) + ':' + m[3] : '');
+    }
+  }
+  const body = text + (p.detail ? '\n' + String(p.detail).replace(/\r\n/g, '\n').trim() : '');
+  notesStore.add(todoFile(), { text: body.slice(0, 5000), date, backlog, category: p.category ? String(p.category).slice(0, 30) : null, due, repeat, split: false });
+  refreshTodo();
+  const title = text.split('\n')[0].slice(0, 40);
+  const where = repeat ? '반복 (' + repeat.rule + ')' : backlog ? '언젠가' : date === notesStore.ymd(now) ? '오늘' : date;
+  win?.webContents.send('pet:say', { text: '할 일 받았어 — ' + title + ' (' + where + ')', ms: 4000, quiet: true });
+  console.log('[inbox] 할 일 받음 →', where);
+  return { ok: true, where, title };
+}
+
+/**
+ * 물어보기 (ask.js) — 묻기는 바로 돌아오고, 답은 기다렸다가 캐릭터 알림 카드로 (누르면 팔레트의 그 답).
+ * 팔레트가 떠 있으면 ask:update 로 목록을 바로 고친다. 설정 askModel: '' 기본 | sonnet | haiku
+ */
+function startAsk() {
+  askClaude.init(app.getPath('userData'), (l) => palette.window()?.webContents.send('ask:update', l));
+}
+ipcMain.handle('ask:list', () => askClaude.list());
+ipcMain.handle('ask:send', async (_e, q) => {
+  const model = settings.load().askModel || '';
+  const p = askClaude.ask(q, model);
+  // 실행 파일을 못 찾는 등 바로 끝나는 실패는 기다렸다가 돌려준다
+  const quick = await Promise.race([p, new Promise((r) => setTimeout(() => r(null), 400))]);
+  if (quick && !quick.ok && !quick.item) return { ok: false, error: quick.error, ...askClaude.list() };
+  p.then((r) => {
+    if (!r || !r.item) return;
+    const it = r.item;
+    const title = it.q.split('\n')[0].slice(0, 40);
+    const first = it.a.replace(/\s+/g, ' ').slice(0, 90);
+    win?.webContents.send('pet:say', {
+      text: (r.ok ? '답 왔어 — ' : '못 물어봤어 — ') + title, source: 'Claude 물어보기', level: r.ok ? 'done' : 'fail',
+      line: first, ask: it.id, mood: r.ok ? 'happy' : 'alert', ms: 12000,
+    });
+    const pw = palette.window();
+    if (!(pw && pw.isFocused())) toast(r.ok ? 'Claude 답이 왔어요' : 'Claude 에게 못 물어봤어요', title, null, () => palette.open('ask:' + it.id));
+  });
+  return { ok: true, ...askClaude.list() };
+});
+ipcMain.handle('ask:cancel', () => { askClaude.cancel(); return askClaude.list(); });
+ipcMain.handle('ask:remove', (_e, id) => askClaude.remove(id));
+ipcMain.handle('ask:clear', () => askClaude.clear());
 
 // 클립보드 기록
 ipcMain.handle('clip:read', () => clipHistory.read());          // Electron 44: 클립보드는 Promise

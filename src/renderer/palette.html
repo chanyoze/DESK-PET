@@ -48,6 +48,19 @@
   .empty { padding: 18px; color: var(--dim); text-align: center; line-height: 1.7; }
   .form { display: none; flex-direction: column; gap: 6px; padding: 10px; background: var(--panel); border-radius: 8px; }
   .form.on { display: flex; }
+  .qa { padding: 8px 10px; border-bottom: 1px solid #22273a; cursor: pointer; }
+  .qa:last-child { border-bottom: 0; }
+  .qa .q { font-weight: 700; white-space: pre-wrap; word-break: break-word; max-height: 3.1em; overflow: hidden; line-height: 1.55; }
+  .qa .a { color: #c3cce0; white-space: pre-wrap; word-break: break-word; line-height: 1.6; margin-top: 4px; max-height: 3.2em; overflow: hidden; }
+  .qa.open { background: #1f2436; cursor: default; }
+  .qa.open .q { max-height: none; }
+  .qa.open .a { max-height: none; user-select: text; }
+  .qa .sub { color: #6b7590; font-size: 11px; margin-top: 3px; }
+  .qa.err .a { color: #ff9c9c; }
+  .qa .acts { display: none; gap: 4px; margin-top: 6px; }
+  .qa.open .acts { display: flex; }
+  .dots::after { content: '…'; animation: dots 1.2s steps(3) infinite; }
+  @keyframes dots { 0% { content: '.'; } 33% { content: '..'; } 66% { content: '…'; } }
   .toast { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); background: #2f855a; color: #fff;
            padding: 6px 14px; border-radius: 14px; font-size: 12.5px; display: none; }
 </style>
@@ -57,6 +70,7 @@
     <button class="tab" data-tab="memo">빠른 메모<small id="hk-memo"></small></button>
     <button class="tab" data-tab="clip">클립보드<small id="hk-clip"></small></button>
     <button class="tab" data-tab="links">바로가기<small id="hk-links"></small></button>
+    <button class="tab" data-tab="ask">물어보기<small id="hk-ask"></small></button>
     <span class="spacer"></span>
     <button class="close" id="close" title="닫기 (Esc)">✕</button>
   </div>
@@ -118,6 +132,20 @@
     <div class="list" id="links-list"></div>
   </section>
 
+  <!-- 물어보기 (Claude Code) -->
+  <section class="pane" id="pane-ask">
+    <div class="row" style="align-items:stretch">
+      <textarea id="ask-q" spellcheck="false" rows="2" style="flex:1;height:52px" placeholder="Claude 에게 물어볼 것 — Enter 묻기 · Shift+Enter 줄바꿈"></textarea>
+      <button class="btn pri" id="ask-send" style="white-space:nowrap">묻기</button>
+    </div>
+    <div class="list" id="ask-list"></div>
+    <div class="row">
+      <span class="hint" id="ask-hint">창을 닫아도 계속 기다려요 — 답이 오면 캐릭터가 알려 줘요</span>
+      <span class="spacer"></span>
+      <button class="btn warn" id="ask-clear">기록 비우기</button>
+    </div>
+  </section>
+
   <div class="toast" id="toast"></div>
 
 <script>
@@ -143,12 +171,15 @@
 
   // ── 탭 ──
   function setTab(t) {
+    let focusId = null;
+    if (String(t).startsWith('ask:')) { focusId = t.slice(4); t = 'ask'; }     // 답 카드를 눌러 왔을 때
     tab = t;
     document.querySelectorAll('.tab').forEach((b) => b.classList.toggle('on', b.dataset.tab === t));
     document.querySelectorAll('.pane').forEach((p) => p.classList.toggle('on', p.id === 'pane-' + t));
     if (t === 'memo') $('memo-text').focus();
     if (t === 'clip') { refreshClip(); $('clip-q').focus(); }
     if (t === 'links') { refreshLinks(); $('links-q').focus(); }
+    if (t === 'ask') { refreshAsk(focusId); $('ask-q').focus(); }
   }
   document.querySelectorAll('.tab').forEach((b) => b.onclick = () => setTab(b.dataset.tab));
   $('close').onclick = () => api.close();
@@ -307,13 +338,86 @@
   $('lf-folder').onclick = pick(true);
   $('links-q').addEventListener('input', () => { sel.links = 0; renderLinks(); });
 
+  // ── 물어보기 ──
+  let ask = { items: [], busy: false, found: true };
+  let openAsk = null;            // 펼친 답
+  let tick = null;
+  function renderAsk() {
+    const box = $('ask-list');
+    box.innerHTML = '';
+    $('ask-send').textContent = ask.busy ? '그만' : '묻기';
+    $('ask-send').title = ask.busy ? '기다리던 답을 그만 받는다' : 'Enter';
+    if (!ask.found) $('ask-hint').textContent = '이 PC 에서 Claude Code(claude 명령)를 찾지 못했어요';
+    if (!ask.items.length) {
+      box.innerHTML = '<div class="empty">한 줄 물어보면 Claude Code 가 대답해요.<br>답은 여기 쌓이고, 할 일 · 스티커 메모로 바로 보낼 수 있어요.</div>';
+      return;
+    }
+    for (const x of ask.items) {
+      const el = document.createElement('div');
+      const isOpen = openAsk === x.id || (openAsk == null && x === ask.items[0] && x.status !== 'pending');
+      el.className = 'qa' + (isOpen ? ' open' : '') + (x.status === 'error' ? ' err' : '');
+      const q = document.createElement('div'); q.className = 'q'; q.textContent = x.q;
+      const a = document.createElement('div'); a.className = 'a';
+      if (x.status === 'pending') { a.textContent = '생각하는 중 · ' + Math.round((Date.now() - x.at) / 1000) + '초'; a.classList.add('dots'); }
+      else a.textContent = x.a;
+      const sub = document.createElement('div'); sub.className = 'sub';
+      sub.textContent = ago(x.at) + (x.sec != null ? ' · ' + x.sec + '초 걸림' : '');
+      el.appendChild(q); el.appendChild(a); el.appendChild(sub);
+      if (x.status !== 'pending') {
+        const acts = document.createElement('div'); acts.className = 'acts';
+        const mk = (label, title, fn) => { const b = document.createElement('button'); b.className = 'btn'; b.textContent = label; b.title = title; b.onclick = (e) => { e.stopPropagation(); fn(b); }; acts.appendChild(b); };
+        const qTitle = x.q.split('\n')[0].slice(0, 60);
+        mk('복사', '답을 클립보드로', async () => { await api.clipCopy(x.a); toast('답을 복사했어 — Ctrl+V'); });
+        mk('할 일로', '질문이 제목, 답이 설명인 오늘 할 일', async () => { await api.memoSave({ text: qTitle + '\n' + x.a, target: 'today' }); toast('오늘 할 일에 넣었어'); });
+        mk('언젠가로', '기약 없는 할 일로', async () => { await api.memoSave({ text: qTitle + '\n' + x.a, target: 'backlog' }); toast('언젠가에 넣었어'); });
+        mk('메모로', '화면 스티커 메모로', async () => { await api.memoSave({ text: qTitle + '\n\n' + x.a, target: 'note' }); toast('스티커 메모로 붙였어'); });
+        mk('다시 묻기', '같은 질문을 입력 칸에', () => { $('ask-q').value = x.q; $('ask-q').focus(); });
+        const sp = document.createElement('span'); sp.className = 'spacer'; acts.appendChild(sp);
+        mk('✕', '기록에서 지우기', async () => { ask = await api.askRemove(x.id); renderAsk(); });
+        el.appendChild(acts);
+      }
+      el.onclick = () => { if (openAsk !== x.id) { openAsk = x.id; renderAsk(); } };
+      box.appendChild(el);
+      if (isOpen && openAsk === x.id) setTimeout(() => el.scrollIntoView({ block: 'nearest' }), 0);
+    }
+    // 기다리는 동안 초 세기
+    clearInterval(tick);
+    if (ask.items.some((x) => x.status === 'pending')) tick = setInterval(renderAskPending, 1000);
+  }
+  function renderAskPending() {
+    const x = ask.items.find((y) => y.status === 'pending');
+    const el = x && $('ask-list').querySelector('.dots');
+    if (el) el.textContent = '생각하는 중 · ' + Math.round((Date.now() - x.at) / 1000) + '초';
+  }
+  async function sendAsk() {
+    if (ask.busy) { ask = await api.askCancel(); renderAsk(); return; }
+    const q = $('ask-q').value.trim();
+    if (!q) return;
+    const r = await api.askSend(q);
+    if (!r.ok) { toast(r.error || '못 물어봤어'); return; }
+    ask = r; openAsk = null;
+    $('ask-q').value = '';
+    renderAsk();
+  }
+  $('ask-send').onclick = sendAsk;
+  $('ask-q').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendAsk(); }
+  });
+  $('ask-clear').onclick = async () => { ask = await api.askClear(); openAsk = null; renderAsk(); };
+  api.onAsk((l) => { ask = l; renderAsk(); });
+  async function refreshAsk(focusId) {
+    ask = await api.askList();
+    if (focusId) openAsk = focusId;
+    renderAsk();
+  }
+
   // ── 키보드 ──
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       if ($('links-form').classList.contains('on')) { $('links-form').classList.remove('on'); return; }
       api.close(); return;
     }
-    if (e.ctrlKey && ['1', '2', '3'].includes(e.key)) { setTab(['memo', 'clip', 'links'][+e.key - 1]); e.preventDefault(); return; }
+    if (e.ctrlKey && ['1', '2', '3', '4'].includes(e.key)) { setTab(['memo', 'clip', 'links', 'ask'][+e.key - 1]); e.preventDefault(); return; }
     const inForm = $('links-form').contains(document.activeElement);
     if (tab === 'clip' || (tab === 'links' && !inForm)) {
       const rows = tab === 'clip' ? clipRows() : linkRows();
@@ -327,7 +431,7 @@
   api.onTab((t) => setTab(t));
   api.init().then((o) => {
     const hk = o.hotkeys || {};
-    for (const k of ['memo', 'clip', 'links']) if (hk[k]) $('hk-' + k).textContent = hk[k].replace('CommandOrControl', 'Ctrl');
+    for (const k of ['memo', 'clip', 'links', 'ask']) if (hk[k]) $('hk-' + k).textContent = hk[k].replace('CommandOrControl', 'Ctrl');
     setTab(o.tab || 'memo');
   });
 </script>
