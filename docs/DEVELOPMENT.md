@@ -58,6 +58,7 @@ src/
   notes-store.js           todo.md(일자별 · 분류 · 언젠가 · 반복 · 기한 · 설명) 읽고 쓰기 · 반복 만들기 · 한꺼번에 옮기기 · notes.json (electron 없이 시험 가능)
   editor-window.js         글 입력 창 (투명 창은 글자를 못 받아서 따로 띄운다) — preload-editor.js
   settings-window.js       설정 창 (renderer/settings.html · preload-settings.js) — main.js 의 prefs:get / prefs:set
+  ask.js                   물어보기 — 이 PC 의 Claude Code 를 claude -p 로 실행해 답 받기 (electron 없이 시험 가능)
   char-package.js          캐릭터 꾸러미(.deskpet) 묶기 · 검사 · 풀기 (electron 없이 시험 가능)
   maker-window.js          내 그림으로 캐릭터 만들기 창 (renderer/maker.html · preload-maker.js) — main.js 의 maker:* · chars:*
   palette-window.js        도구 팔레트 창 — 빠른 메모 · 클립보드 기록 · 바로가기 (renderer/palette.html · preload-palette.js)
@@ -444,6 +445,36 @@ curl -X POST http://127.0.0.1:45678/say \
 
 `mood` 는 `normal` / `happy` / `alert` 이고 말풍선 색과 캐릭터 반응 동작이 달라진다.
 앱이 꺼져 있으면 `tools/say.js` 는 **조용히 무시한다** — 훅에서 불려도 실패하지 않는다.
+
+### 할 일 · 메모 받기 (/todo · /note)
+
+다른 Claude 세션 · 스크립트가 할 일과 스티커 메모를 넣는 입구 (`main.js` `addFromOutside`, `deskpet.ps1 todo · note`).
+
+```bash
+curl -s -X POST http://127.0.0.1:45678/todo -H "Content-Type: application/json; charset=utf-8" \
+  --data-binary '{"text":"제목\n설명 줄","date":"tomorrow","due":"15:00","category":"개인"}'
+curl -s -X POST http://127.0.0.1:45678/note -H "Content-Type: application/json; charset=utf-8" --data-binary '{"text":"메모","color":"blue"}'
+```
+
+- todo: `text`(여러 줄이면 첫 줄 제목) · `detail` · `date`(today · tomorrow · 오늘 · 내일 · YYYY-MM-DD · MM-DD) · `backlog` · `category` ·
+  `due`(HH:MM · MM-DD [HH:MM] · YYYY-MM-DD [HH:MM]) · `repeat`(매일 · 평일 · 주말 · 매주 월,수 · 매월 1일 [HH:MM]).
+  응답 `{ ok, where, title }` — 잘못된 날짜 · 규칙은 `{ ok: false, error }` (400)
+- note: `text` · `color`(yellow · pink · green · blue · gray)
+- **JSON POST 만, `Origin` 헤더가 있으면 403** — 열어 둔 웹페이지가 `fetch('http://127.0.0.1:45678/todo')` 로 몰래 넣지 못하게.
+  (브라우저가 다른 출처로 `application/json` 을 보내려면 먼저 OPTIONS 로 허락을 묻는데 우리는 답하지 않고, text/plain 은 거절한다)
+- `deskpet.ps1 todo · note` 는 결과를 UTF-8 로 찍는다 (Git Bash · Claude Code 에서 한글이 안 깨지게). 앱이 꺼져 있으면 종료 코드 3
+- 다른 세션이 알게 하려면 전역 `~/.claude/CLAUDE.md` 에 명령 예시와 "안 되면 todo.md 직접 수정" 을 적어 둔다 (프로젝트별 메모리는 그 폴더 세션에서만 보인다)
+
+### 물어보기 (ask.js)
+
+팔레트 "물어보기" 탭 → `claude -p --output-format json --tools "" --no-session-persistence --settings {"disableAllHooks":true}`, 질문은 stdin.
+
+- 실행 파일은 `%APPDATA%\npm\node_modules\@anthropic-ai\claude-code\bin\claude.exe` → `~/.local/bin` → `where claude` 순으로 찾고
+  셸 없이 실행한다 (`.cmd` 를 셸로 돌리면 따옴표 · 한글 처리가 꼬인다)
+- `--bare` 는 훅까지 끄지만 API 키가 있어야 해서 안 쓴다. 훅은 `disableAllHooks` 로 꺼서 우리 앱이 이 실행을 "Claude 끝났어" 로 알리지 않는다
+- 한 번에 하나, 3분 넘으면 그만둔다. 묻기는 바로 돌아오고, 답은 `pet:say`(source "Claude 물어보기", `ask: id`) 카드 →
+  누르면 `palette.open('ask:<id>')` 로 그 답을 펼친다. 팔레트가 포커스가 없으면 윈도우 알림도
+- 기록은 `ask-history.json` 최근 30개, 질문 · 답 내용은 로그에 남기지 않는다. 모델은 설정 `askModel` ('' · sonnet · haiku)
 
 ### Claude Code 훅 동작 방식
 

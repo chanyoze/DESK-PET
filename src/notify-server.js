@@ -12,6 +12,10 @@
  * /claude — Claude Code 훅이 stdin 으로 받은 JSON 을 그대로 POST 한다 (src/claude-hooks.js).
  *           무슨 말을 할지는 앱이 hook_event_name 등을 보고 정한다.
  *           응답에 needWindow(세션 id)가 있으면 훅이 터미널 창을 찾아 /claude-window 로 알려 준다.
+ *
+ * /todo · /note — 다른 프로그램(다른 Claude 세션 · deskpet.ps1 todo/note)이 할 일 · 스티커 메모를 넣는다.
+ *           JSON POST 만, 브라우저가 보낸 요청(Origin 헤더)은 거절한다 — 열어 둔 웹페이지가 몰래 넣지 못하게.
+ *           (브라우저는 다른 출처로 Content-Type: application/json 을 보내려면 먼저 허락을 묻는데 우리는 답하지 않는다)
  */
 const http = require('http');
 
@@ -28,7 +32,7 @@ function readBody(req, limit, cb) {
   req.on('end', () => cb(Buffer.concat(chunks).toString('utf8').replace(/^\uFEFF/, '')));
 }
 
-function start(port, onMessage, onClaude) {
+function start(port, onMessage, onClaude, onInbox) {
   const server = http.createServer((req, res) => {
     const url = new URL(req.url, 'http://127.0.0.1');
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -50,6 +54,23 @@ function start(port, onMessage, onClaude) {
         }
         const extra = onClaude ? onClaude(ev, url.pathname === '/claude-window' ? 'window' : 'event') : null;
         res.end(JSON.stringify({ ok: true, ...(extra || {}) }));
+      });
+      return;
+    }
+    if ((url.pathname === '/todo' || url.pathname === '/note') && onInbox) {
+      const ct = String(req.headers['content-type'] || '');
+      if (req.method !== 'POST' || req.headers.origin || !/application\/json/i.test(ct)) {
+        res.statusCode = 403;
+        res.end(JSON.stringify({ ok: false, error: 'JSON POST 만 받는다' }));
+        return;
+      }
+      readBody(req, 64 * 1024, (body) => {
+        let p;
+        try { p = JSON.parse(body); } catch { res.statusCode = 400; res.end(JSON.stringify({ ok: false, error: 'JSON 아님' })); return; }
+        let r;
+        try { r = onInbox(url.pathname.slice(1), p || {}); } catch (e) { r = { ok: false, error: e.message }; }
+        if (!r || !r.ok) res.statusCode = 400;
+        res.end(JSON.stringify(r || { ok: false }));
       });
       return;
     }

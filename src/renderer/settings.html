@@ -225,7 +225,7 @@
 
       // 도구
       add(el('h2', {}, '도구'));
-      for (const [tab, name] of [['memo', '빠른 메모'], ['clip', '클립보드 기록'], ['links', '바로가기']]) {
+      for (const [tab, name] of [['memo', '빠른 메모'], ['clip', '클립보드 기록'], ['links', '바로가기'], ['ask', 'Claude 물어보기']]) {
         const acc = st.hotkeys[tab];
         const on = capturing === tab;
         const failed = acc && (st.hotkeyFailed || []).includes(acc);
@@ -237,6 +237,9 @@
       }
       add(row('클립보드 기록', toggle(!st.clipPaused, (v) => set('clipPaused', !v, v ? '다시 기록해요' : '기록을 멈췄어요')),
         el('span', { class: 'note' }, '기록은 끄면 사라지고 📌 고정만 남아요')));
+
+      add(row('물어보기 모델', seg([['', '기본'], ['sonnet', '빠르게 (Sonnet)'], ['haiku', '가장 빠르게 (Haiku)']], st.askModel || '', (v) => set('askModel', v)),
+        el('span', { class: 'note' }, '이 PC 의 Claude Code 로 물어봐요 (구독 사용량)')));
 
       // 성능
       add(el('h2', {}, '성능'));

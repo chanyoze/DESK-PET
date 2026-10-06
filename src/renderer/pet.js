@@ -946,7 +946,7 @@
       // 손이 필요한 것만 안 읽음으로 센다 — 끝남 · 정보는 목록에만 (Claude 를 여럿 돌리면 끝남이 금방 수십 개가 된다)
       const level = msg.card && msg.card.level;
       const quiet = level === 'done' || level === 'info';
-      const it = { id: 'a' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), at: Date.now(), card: msg.card, sid: msg.sid || '', update: !!msg.update, read: quiet };
+      const it = { id: 'a' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), at: Date.now(), card: msg.card, sid: msg.sid || '', update: !!msg.update, ask: msg.ask || '', read: quiet };
       msg.inboxId = it.id;
       this.items.unshift(it);
       if (this.items.length > INBOX_MAX) this.items.length = INBOX_MAX;
@@ -1170,6 +1170,7 @@
         { label: ('빠른 메모  ' + hotkeyText('memo')).trim(), value: 'tool:memo' },
         { label: ('클립보드 기록  ' + hotkeyText('clip')).trim(), value: 'tool:clip' },
         { label: ('바로가기  ' + hotkeyText('links')).trim(), value: 'tool:links' },
+        { label: ('Claude 에게 물어보기  ' + hotkeyText('ask')).trim(), value: 'tool:ask' },
       ],
     });
 
@@ -1284,6 +1285,7 @@
         const it = inbox.items.find((x) => x.id === arg);
         console.log('[inbox] 목록 항목 누름:', it ? it.card.level + ' ' + (it.sid ? it.sid.slice(0, 8) : '(sid 없음)') : '(없음)');
         if (it && it.update) window.petAPI.updatePrompt();
+        else if (it && it.ask) window.petAPI.openPalette('ask:' + it.ask);      // 물어보기 답 — 팔레트에서 펼친다
         else if (it && it.sid) claude.focus(it.sid, p);
       }
     } else if (kind === 'toast') {
@@ -1500,11 +1502,13 @@
       // Claude 세션 말풍선이면 그 터미널로 간다
       const sid = bp.bubble.current && bp.bubble.current.sid;
       const isUpdate = !!(bp.bubble.current && bp.bubble.current.update);   // 새 버전 카드면 업데이트 확인 창
+      const askId = bp.bubble.current && bp.bubble.current.ask;             // 물어보기 답 카드면 팔레트의 그 답
       console.log('[bubble] 누름:', bp.bubble.current && bp.bubble.current.card ? bp.bubble.current.card.level : '대화', sid ? 'sid ' + sid.slice(0, 8) : '');
       if (bp.bubble.current && bp.bubble.current.inboxId) inbox.read(bp.bubble.current.inboxId);
       bp.bubble.dismiss();
       if (sid) claude.focus(sid, bp);
       else if (isUpdate) window.petAPI.updatePrompt();
+      else if (askId) window.petAPI.openPalette('ask:' + askId);
       return;
     }
     const p = petAt(e.clientX, e.clientY);

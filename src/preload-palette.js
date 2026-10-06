@@ -27,4 +27,12 @@ contextBridge.exposeInMainWorld('paletteAPI', {
   linksMove: (id, dir) => ipcRenderer.invoke('links:move', id, dir),
   /** 파일 · 폴더 고르기 창 → 경로 (취소면 null) */
   pickPath: (folder) => ipcRenderer.invoke('links:pick', folder),
+
+  // 물어보기 (Claude Code) — 모두 { items: [{ id, q, a, status: pending|done|error, at, sec }], busy, found } 를 돌려준다
+  askList: () => ipcRenderer.invoke('ask:list'),
+  askSend: (q) => ipcRenderer.invoke('ask:send', q),        // 바로 돌아온다 (답은 ask:update 로)
+  askCancel: () => ipcRenderer.invoke('ask:cancel'),
+  askRemove: (id) => ipcRenderer.invoke('ask:remove', id),
+  askClear: () => ipcRenderer.invoke('ask:clear'),
+  onAsk: (cb) => ipcRenderer.on('ask:update', (_e, l) => cb(l)),
 });
