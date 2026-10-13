@@ -245,6 +245,13 @@ function createWindow() {
   // 커서 좌표는 바뀔 때만 보내는데, 렌더러가 뜨기 전에 보낸 값은 버려진다.
   // 로드가 끝나면 한 번 다시 보내게 해서 마우스를 안 움직여도 커서 위치를 알게 한다.
   win.webContents.on('did-finish-load', () => { lastCursor = ''; });
+  // 클릭 먹통 추적용 — 렌더러가 죽거나 멈추면 로그에 남기고, 죽었으면 다시 띄운다
+  win.webContents.on('render-process-gone', (_e, d) => {
+    console.error('[app] 렌더러 종료:', d.reason, d.exitCode);
+    if (d.reason !== 'clean-exit') setTimeout(() => reloadPet('렌더러 종료'), 1000);
+  });
+  win.webContents.on('unresponsive', () => console.error('[app] 렌더러 응답 없음'));
+  win.webContents.on('responsive', () => console.log('[app] 렌더러 다시 응답'));
 
   const flags = ['trace', 'hitbox'].filter((f) => process.argv.includes('--' + f));
   if (/^\d+$/.test(process.env.DESKPET_FPS || '')) flags.push('fps=' + process.env.DESKPET_FPS);   // 측정용 — 프레임 고정
@@ -292,6 +299,17 @@ function createWindow() {
 }
 
 /**
+ * 펫 화면만 다시 띄운다 — 클릭이 가끔 통째로 안 먹을 때 (2026-10-06: 창까지는 클릭이 가는데 화면이 반응 없음,
+ * 다시 띄우면 풀린다. 원인은 아직 모름). 할 일 · 메모 · 설정 · 알림은 메인에 있어서 그대로다.
+ * 클릭 통과 되돌리기는 did-start-loading 이 한다.
+ */
+function reloadPet(why) {
+  if (!win || win.isDestroyed()) return;
+  console.log('[app] 새로고침 —', why);
+  win.reload();
+}
+
+/**
  * 트레이 메뉴는 열 때마다 새로 만든다.
  * 한 번 만들어 두면 좌클릭 메뉴로 캐릭터·크기를 바꿔도 체크 표시가 그대로 남고,
  * 사용자 폴더에 새로 넣은 캐릭터도 재시작 전까지 목록에 안 뜬다.
@@ -336,6 +354,7 @@ function buildTrayMenu() {
       })),
     },
     { label: '가운데로 불러오기', click: () => win?.webContents.send('pet:command', 'recall') },
+    { label: '새로고침 (클릭이 안 될 때)', click: () => reloadPet('트레이') },
     { type: 'separator' },
     { label: '설정…', click: () => openSettings() },
     { label: updateInfo ? '⬆ 업데이트 v' + updateInfo.version + '…' : '업데이트 확인 (지금 v' + app.getVersion() + ')', click: () => (updateInfo ? promptUpdate() : checkUpdate(true)) },
@@ -1663,9 +1682,39 @@ function registerHotkeys(quiet) {
 ipcMain.handle('palette:init', () => ({
   tab: palette.initialTab(),
   hotkeys: { memo: hotkeyLabel('memo'), clip: hotkeyLabel('clip'), links: hotkeyLabel('links'), ask: hotkeyLabel('ask') },
+  draft: loadMemoDraft(),
 }));
 ipcMain.on('palette:close', () => palette.close());
 ipcMain.handle('palette:open', (_e, tab) => palette.open(tab) && true);
+
+/**
+ * 빠른 메모에 쓰던 글 — 저장하지 않고 닫아도 (팔레트는 밖을 누르면 닫힌다) 남겨 뒀다가 다시 열 때 돌려준다.
+ * 저장하거나 지우기를 누르면 비운다. userData/memo-draft.json { text, target } — 앱을 껐다 켜도 남는다.
+ */
+const memoDraftFile = () => path.join(app.getPath('userData'), 'memo-draft.json');
+let memoDraft = null;
+let memoDraftTimer = null;
+function loadMemoDraft() {
+  if (!memoDraft) {
+    try { memoDraft = JSON.parse(fs.readFileSync(memoDraftFile(), 'utf8')); } catch { memoDraft = null; }
+    if (!memoDraft || typeof memoDraft.text !== 'string') memoDraft = { text: '', target: 'today' };
+  }
+  return memoDraft;
+}
+function flushMemoDraft() {
+  if (!memoDraftTimer) return;
+  clearTimeout(memoDraftTimer);
+  memoDraftTimer = null;
+  try {
+    if (memoDraft.text.trim()) fs.writeFileSync(memoDraftFile(), JSON.stringify(memoDraft, null, 2), 'utf8');
+    else fs.rmSync(memoDraftFile(), { force: true });
+  } catch (e) { console.error('[tools] 쓰던 메모 못 남김:', e.message); }
+}
+ipcMain.on('memo:draft', (_e, d) => {
+  memoDraft = { text: String((d && d.text) || ''), target: ['today', 'backlog', 'note'].includes(d && d.target) ? d.target : 'today' };
+  clearTimeout(memoDraftTimer);
+  memoDraftTimer = setTimeout(flushMemoDraft, 500);       // 글자마다 쓰지 않게
+});
 
 // 빠른 메모 — 오늘 할 일 · 언젠가 · 스티커 메모
 ipcMain.handle('memo:save', (_e, m) => {
@@ -1885,4 +1934,7 @@ ipcMain.on('mouse:interactive', (_e, interactive) => {
 
 app.on('window-all-closed', () => app.quit());
 
-app.on('will-quit', () => { try { globalShortcut.unregisterAll(); } catch { /* 그만 */ } clipHistory.stop(); });
+// GPU · 유틸리티 프로세스가 죽어도 로그에 남긴다 (클릭 먹통 추적용)
+app.on('child-process-gone', (_e, d) => console.error('[app] 하위 프로세스 종료:', d.type, d.reason, d.exitCode));
+
+app.on('will-quit', () => { try { globalShortcut.unregisterAll(); } catch { /* 그만 */ } clipHistory.stop(); flushMemoDraft(); });

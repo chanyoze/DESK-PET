@@ -1,7 +1,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('paletteAPI', {
-  /** { tab, hotkeys, today } */
+  /** { tab, hotkeys, draft } */
   init: () => ipcRenderer.invoke('palette:init'),
   /** 메인이 탭을 바꾸라고 할 때 (이미 떠 있는데 다른 단축키를 누름) */
   onTab: (cb) => ipcRenderer.on('palette:tab', (_e, t) => cb(t)),
@@ -9,6 +9,8 @@ contextBridge.exposeInMainWorld('paletteAPI', {
 
   // 빠른 메모 — target: today | backlog | note
   memoSave: (m) => ipcRenderer.invoke('memo:save', m),
+  /** 쓰던 글 { text, target } 을 남겨 둔다 (빈 글이면 지운다) — 다시 열 때 init 의 draft 로 돌아온다 */
+  memoDraft: (d) => ipcRenderer.send('memo:draft', d),
   readClipboard: () => ipcRenderer.invoke('clip:read'),
 
   // 클립보드 기록 — 모두 { pins, recent, paused } 를 돌려준다

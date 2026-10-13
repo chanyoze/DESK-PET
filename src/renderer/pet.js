@@ -1393,6 +1393,7 @@
   //  마우스
   // ════════════════════════════════════════════════════════════
   let hover = false;
+  let hoverSince = 0, hoverFrom = null, lastDomInput = 0, deafLogged = false;   // 클릭 먹통 추적 (checkDeaf)
   let drag = null;        // { pet, ... }
   // seen: 좌표를 한 번이라도 받았는지 (왼쪽 모니터에 있으면 x 가 음수라서 -1 로는 구분이 안 된다)
   const cursor = { x: -1, y: -1, seen: false };
@@ -1439,6 +1440,7 @@
         if (what !== '캐릭터') console.log('[mouse] 클릭 받기 시작 —', what, Math.round(cursor.x) + ',' + Math.round(cursor.y));
       }
       hover = want;
+      if (want) { hoverSince = performance.now(); hoverFrom = { x: cursor.x, y: cursor.y }; deafLogged = false; }
       window.petAPI.setInteractive(want);
     }
     // 잡는 손 모양은 캐릭터 위에서만 (메뉴가 열려 화면 전체가 클릭을 받을 때도 빈 곳은 보통 커서)
@@ -1459,6 +1461,27 @@
     else if (performance.now() - offScreenSince > 1000) { menu.close(); offScreenSince = 0; }
   }
 
+  /*
+   * 클릭 먹통 추적 (2026-10-06) — 가끔 창까지는 클릭이 가는데 화면이 아무 반응을 안 하고, 새로고침하면 풀린다.
+   * 클릭을 받는 중인데 실제 마우스 이벤트가 화면에 안 들어오면 한 번 로그에 남긴다 (좌표 · 요소 종류만).
+   * 로그에 "받기 시작"만 있고 "누름"이 없으면 이벤트가 화면까지 안 온 것, "누름"이 있으면 처리 쪽 문제.
+   */
+  const elName = (t) => (t ? t.tagName + (typeof t.className === 'string' && t.className ? '.' + t.className.split(' ')[0] : '') : '-');
+  function checkDeaf() {
+    if (!hover || drag || deafLogged || !hoverFrom) return;
+    const now = performance.now();
+    if (now - hoverSince < 1500 || lastDomInput >= hoverSince) return;
+    if (Math.hypot(cursor.x - hoverFrom.x, cursor.y - hoverFrom.y) < 20) return;   // 커서가 움직였는데도 mousemove 가 없을 때만
+    deafLogged = true;
+    console.log('[mouse] 입력 안 들어옴 — 클릭 받는 중인데 화면에 마우스 이벤트가 없다', Math.round(cursor.x) + ',' + Math.round(cursor.y),
+      '맨 위 요소', elName(document.elementFromPoint(cursor.x, cursor.y)));
+  }
+  window.addEventListener('mousemove', () => { lastDomInput = performance.now(); }, true);
+  window.addEventListener('mousedown', (e) => {
+    lastDomInput = performance.now();
+    if (hover) console.log('[mouse] 누름', Math.round(e.clientX) + ',' + Math.round(e.clientY), elName(e.target));
+  }, true);
+
   // 메인이 알려 주는 커서 좌표 — forward mousemove 가 끊겨도 클릭 전환이 되게 한다
   window.petAPI.onCursor((p) => {
     if (drag) return;              // 드래그 중엔 실제 mousemove 가 더 정확하다
@@ -1466,6 +1489,7 @@
     cursor.seen = true;
     cursor.y = p.y;
     syncInteractive(false);
+    checkDeaf();
     closeMenuIfCursorLeft();
   });
 

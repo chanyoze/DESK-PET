@@ -86,8 +86,9 @@
     </div>
     <textarea id="memo-text" spellcheck="false" placeholder="첫 줄이 할 일, 다음 줄부터는 설명"></textarea>
     <div class="row">
-      <span class="hint">Enter 저장 · Shift+Enter 줄바꿈 · Esc 닫기</span>
+      <span class="hint">Enter 저장 · Shift+Enter 줄바꿈 · Esc 닫기 (쓰던 글은 남아 있어)</span>
       <span class="spacer"></span>
+      <button class="btn" id="memo-clear" title="쓰던 글을 지운다">지우기</button>
       <button class="btn pri" id="memo-save">저장</button>
     </div>
   </section>
@@ -185,22 +186,38 @@
   $('close').onclick = () => api.close();
 
   // ── 빠른 메모 ──
-  document.querySelectorAll('#memo-target button[data-t]').forEach((b) => b.onclick = () => {
-    memoTarget = b.dataset.t;
-    document.querySelectorAll('#memo-target button[data-t]').forEach((x) => x.classList.toggle('on', x === b));
+  function setMemoTarget(t) {
+    memoTarget = t;
+    document.querySelectorAll('#memo-target button[data-t]').forEach((x) => x.classList.toggle('on', x.dataset.t === t));
     $('memo-text').placeholder = memoTarget === 'note' ? '화면에 붙일 메모' : '첫 줄이 할 일, 다음 줄부터는 설명';
+  }
+  // 쓰던 글은 고칠 때마다 메인에 맡긴다 — 밖을 눌러 창이 닫혀도 다시 열면 그대로 (저장 · 지우기 때 비운다)
+  const keepDraft = () => api.memoDraft({ text: $('memo-text').value, target: memoTarget });
+  document.querySelectorAll('#memo-target button[data-t]').forEach((b) => b.onclick = () => {
+    setMemoTarget(b.dataset.t);
+    keepDraft();
     $('memo-text').focus();
   });
+  $('memo-text').addEventListener('input', keepDraft);
   $('memo-paste').onclick = async () => {
     const t = await api.readClipboard();
     const ta = $('memo-text');
     ta.value = ta.value ? ta.value + '\n' + t : t;
+    keepDraft();
     ta.focus();
+  };
+  $('memo-clear').onclick = () => {
+    $('memo-text').value = '';
+    keepDraft();
+    $('memo-text').focus();
   };
   async function saveMemo() {
     const text = $('memo-text').value;
     if (!text.trim()) return;
-    await api.memoSave({ text, target: memoTarget });
+    const r = await api.memoSave({ text, target: memoTarget });
+    if (!r || !r.ok) { toast('못 넣었어 — 글은 그대로 뒀어'); return; }
+    $('memo-text').value = '';
+    keepDraft();
     api.close();
   }
   $('memo-save').onclick = saveMemo;
@@ -432,6 +449,12 @@
   api.init().then((o) => {
     const hk = o.hotkeys || {};
     for (const k of ['memo', 'clip', 'links', 'ask']) if (hk[k]) $('hk-' + k).textContent = hk[k].replace('CommandOrControl', 'Ctrl');
+    if (o.draft && o.draft.text) {
+      setMemoTarget(o.draft.target || 'today');
+      const ta = $('memo-text');
+      ta.value = o.draft.text;
+      ta.setSelectionRange(ta.value.length, ta.value.length);
+    }
     setTab(o.tab || 'memo');
   });
 </script>
