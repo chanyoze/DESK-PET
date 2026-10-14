@@ -137,8 +137,9 @@
   // ── 머리줄 ──
   function setCollapsed(v) {
     collapsed = v;
+    const first = firstLine();        // 본문을 감추기 전에 — 감춘 뒤의 innerText 는 줄바꿈이 사라진다
     document.body.classList.toggle('collapsed', v);
-    $('title').textContent = v ? firstLine() : '';
+    $('title').textContent = v ? first : '';
     $('fold').textContent = v ? '▾' : '‒';
     $('fold').title = v ? '펼치기' : '접기';
   }

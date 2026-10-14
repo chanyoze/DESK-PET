@@ -88,13 +88,19 @@ function applyBounds(id, w, b) {
   setTimeout(() => quiet.delete(id), 300);
 }
 
-function create(n, focus) {
-  if (n.x == null || n.y == null) Object.assign(n, defaultSpot(list.indexOf(n)), { abs: true });
-  const moved = onScreen(boundsOf(n));
-  if (moved) Object.assign(n, moved);
-  const b = boundsOf(n);
-  const w = new BrowserWindow({
-    ...b,
+/**
+ * 어미 창 — 메모 창들이 렌더러 프로세스 하나를 같이 쓰게 하려고 둔 보이지 않는 창.
+ * 메모마다 new BrowserWindow 를 하면 창마다 프로세스가 하나씩 뜬다 (한 장에 전용 20~30MB).
+ * 어미가 window.open 으로 연 창은 어미와 같은 프로세스에서 돌아서, 여러 장을 띄워도 프로세스는 하나다.
+ * 어미 프로세스가 죽으면 메모 창이 다 같이 죽으므로 그때는 다시 띄운다 (글은 메인이 들고 있다).
+ */
+let host = null;
+let hostReady = false;
+const opening = new Map();       // id → { n, focus } — 어미에게 열어 달라고 해 둔 것
+
+function noteOptions(n) {
+  return {
+    ...boundsOf(n),
     minWidth: MIN_W,
     minHeight: n.collapsed ? HEAD_H : MIN_H,
     frame: false,
@@ -111,14 +117,76 @@ function create(n, focus) {
       contextIsolation: true,
       nodeIntegration: false,
     },
+  };
+}
+
+function ensureHost() {
+  if (host && !host.isDestroyed()) return;
+  hostReady = false;
+  host = new BrowserWindow({
+    width: 200,
+    height: 100,
+    show: false,
+    skipTaskbar: true,
+    focusable: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload-note-host.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      backgroundThrottling: false,
+    },
   });
+  const h = host;
+  h.webContents.setWindowOpenHandler(({ frameName }) => {
+    const o = opening.get(frameName);
+    return o ? { action: 'allow', overrideBrowserWindowOptions: noteOptions(o.n) } : { action: 'deny' };
+  });
+  h.webContents.on('did-create-window', (w, details) => {
+    const o = opening.get(details.frameName);
+    opening.delete(details.frameName);
+    // 여는 사이에 지웠거나 닫았거나 숨겼으면 버린다
+    if (!o || !find(o.n.id) || o.n.closed || opts.hidden()) { w.destroy(); return; }
+    setup(o.n, w, o.focus);
+  });
+  h.webContents.on('did-finish-load', () => {
+    if (h !== host) return;
+    hostReady = true;
+    for (const id of opening.keys()) h.webContents.send('host:open', id);
+  });
+  h.webContents.on('render-process-gone', (_e, d) => {
+    console.error('[notes] 메모 프로세스 종료:', d.reason, '— 다시 띄운다');
+    if (h !== host) return;
+    host = null;
+    for (const id of [...wins.keys()]) destroy(id);
+    opening.clear();
+    if (!h.isDestroyed()) h.destroy();
+    if (!quitting) setTimeout(() => sync(), 1000);
+  });
+  h.loadFile(path.join(__dirname, 'renderer', 'note-host.html'));
+}
+
+function create(n, focus) {
+  if (n.x == null || n.y == null) Object.assign(n, defaultSpot(list.indexOf(n)), { abs: true });
+  const moved = onScreen(boundsOf(n));
+  if (moved) Object.assign(n, moved);
+  opening.set(n.id, { n, focus });
+  ensureHost();
+  if (hostReady) host.webContents.send('host:open', n.id);
+}
+
+/** 어미가 열어 준 창에 메모를 붙인다 */
+function setup(n, w, focus) {
   wins.set(n.id, w);
-  w.loadFile(path.join(__dirname, 'renderer', 'note.html'));
-  w.once('ready-to-show', () => {
+  let shown = false;
+  const show = () => {
+    if (shown || w.isDestroyed()) return;
+    shown = true;
     applyBounds(n.id, w, boundsOf(n));
     // 밖에서 넣은 메모 · 켤 때 다시 뜨는 메모는 지금 쓰던 창의 포커스를 뺏지 않는다
     if (focus) { w.show(); w.focus(); } else w.showInactive();
-  });
+  };
+  w.once('ready-to-show', show);
+  w.webContents.once('did-finish-load', () => setTimeout(show, 150));     // ready-to-show 가 안 오는 경우를 대비
   const keep = () => {
     if (quiet.has(n.id) || w.isDestroyed()) return;
     const cur = w.getBounds();
@@ -146,10 +214,10 @@ function create(n, focus) {
       { label: '모두 선택', role: 'selectAll' },
     ]).popup({ window: w });
   });
-  return w;
 }
 
 function destroy(id) {
+  opening.delete(id);
   const w = wins.get(id);
   wins.delete(id);
   if (w && !w.isDestroyed()) w.destroy();
@@ -159,7 +227,7 @@ function destroy(id) {
 function sync(focusId) {
   for (const id of [...wins.keys()]) if (opts.hidden() || !find(id) || find(id).closed) destroy(id);
   if (opts.hidden()) return;
-  for (const n of list) if (!n.closed && !wins.has(n.id)) create(n, n.id === focusId);
+  for (const n of list) if (!n.closed && !wins.has(n.id) && !opening.has(n.id)) create(n, n.id === focusId);
 }
 
 function init(o) {
