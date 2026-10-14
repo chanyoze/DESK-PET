@@ -61,6 +61,7 @@ src/
   ask.js                   물어보기 — 이 PC 의 Claude Code 를 claude -p 로 실행해 답 받기 (electron 없이 시험 가능)
   char-package.js          캐릭터 꾸러미(.deskpet) 묶기 · 검사 · 풀기 (electron 없이 시험 가능)
   maker-window.js          내 그림으로 캐릭터 만들기 창 (renderer/maker.html · preload-maker.js) — main.js 의 maker:* · chars:*
+  note-window.js           스티커 메모 — 한 장이 창 하나, notes.json 읽고 쓰기 (renderer/note.html · preload-note.js)
   palette-window.js        도구 팔레트 창 — 빠른 메모 · 클립보드 기록 · 바로가기 (renderer/palette.html · preload-palette.js)
   clipboard-history.js     클립보드 기록 (메모리에만, 📌 고정만 clipboard-pins.json) — Electron 44 는 클립보드가 Promise
   shortcuts-store.js       바로가기 목록 shortcuts.json — 주소 · 경로 · 명령 종류 판별

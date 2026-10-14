@@ -61,14 +61,10 @@ contextBridge.exposeInMainWorld('petAPI', {
   onTodo: (cb) => ipcRenderer.on('pet:todo', (_e, s) => cb(s)),
   /** recap 시각 { reason, open: [글], total, doneToday } */
   onRecap: (cb) => ipcRenderer.on('pet:recap', (_e, r) => cb(r)),
-  // ── 스티커 메모 · 카드 ── (모두 { notes, todoCard, hidden } 을 돌려준다)
+  // ── 할 일 카드 · 메모 ── (모두 { todoCard, hidden } 을 돌려준다. 메모는 한 장이 창 하나 — note-window.js)
   notesGet: () => ipcRenderer.invoke('notes:get'),
-  /** 입력 창을 띄워 새 메모 — pos 는 처음 붙일 자리 */
+  /** 빈 메모 창을 띄운다 — pos 는 처음 붙일 자리 (이 창 안 좌표) */
   notesAdd: (pos) => ipcRenderer.invoke('notes:add', pos),
-  notesEdit: (id) => ipcRenderer.invoke('notes:edit', id),
-  /** 위치 · 접힘만 */
-  notesUpdate: (id, patch) => ipcRenderer.invoke('notes:update', id, patch),
-  notesRemove: (id) => ipcRenderer.invoke('notes:remove', id),
   notesSetTodoCard: (patch) => ipcRenderer.invoke('notes:setTodoCard', patch),
   notesSetHidden: (v) => ipcRenderer.invoke('notes:setHidden', v),
   // ── 알림 ──

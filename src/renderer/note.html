@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'" />
+<title>메모</title>
+<style>
+  /* 스티커 메모 한 장 — 창 전체가 메모다. 머리줄을 끌어 옮기고(어느 모니터로든), 본문에 바로 쓴다 */
+  :root { --note: #f6e58d; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    display: flex; flex-direction: column; overflow: hidden;
+    background: var(--note); color: #2b2b2b;
+    font: 13px/1.5 'Malgun Gothic', 'Apple SD Gothic Neo', system-ui, sans-serif;
+  }
+  .head {
+    display: flex; align-items: center; gap: 2px; flex: 0 0 30px; padding: 0 4px 0 10px;
+    background: rgba(0, 0, 0, 0.06); user-select: none; -webkit-app-region: drag;
+  }
+  .title { flex: 1; font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .btn {
+    min-width: 22px; height: 22px; padding: 0 5px; border: 0; border-radius: 6px; background: transparent; color: inherit;
+    font: inherit; font-size: 13px; line-height: 22px; cursor: pointer; opacity: 0.7; -webkit-app-region: no-drag;
+  }
+  .btn:hover { opacity: 1; background: rgba(0, 0, 0, 0.12); }
+  .btn.armed { opacity: 1; background: #c53030; color: #fff; font-size: 11px; }
+  .btn.on { opacity: 1; background: rgba(0, 0, 0, 0.18); }
+  .dots { display: none; align-items: center; gap: 5px; padding: 0 4px; -webkit-app-region: no-drag; }
+  .dots.on { display: flex; }
+  .dot { width: 14px; height: 14px; border-radius: 50%; border: 1px solid rgba(0, 0, 0, 0.35); cursor: pointer; padding: 0; }
+  .dot.cur { outline: 2px solid rgba(0, 0, 0, 0.55); outline-offset: 1px; }
+  #body {
+    flex: 1 1 auto; min-height: 0; padding: 8px 12px 10px; overflow-y: auto; outline: none;
+    white-space: pre-wrap; word-break: break-word; cursor: text;
+  }
+  #body.empty::before { content: '메모를 적어 둬'; opacity: 0.4; pointer-events: none; position: absolute; }
+  #body ul, #body ol { margin: 0; padding-left: 20px; }
+  /* 서식 줄 — 이 메모를 쓰고 있을 때만 보인다 */
+  .tools { display: none; flex: 0 0 28px; align-items: center; gap: 2px; padding: 0 6px; background: rgba(0, 0, 0, 0.06); user-select: none; }
+  body.active .tools { display: flex; }
+  body.collapsed #body, body.collapsed .tools { display: none; }
+  ::-webkit-scrollbar { width: 8px; }
+  ::-webkit-scrollbar-thumb { background: rgba(0, 0, 0, 0.2); border-radius: 4px; }
+</style>
+</head>
+<body>
+  <div class="head">
+    <span class="title" id="title"></span>
+    <span class="dots" id="dots"></span>
+    <button class="btn" id="add" title="새 메모">+</button>
+    <button class="btn" id="color" title="색 바꾸기">●</button>
+    <button class="btn" id="fold" title="접기">‒</button>
+    <button class="btn" id="del" title="지우기 (한 번 더 누르면 지운다)">🗑</button>
+    <button class="btn" id="close" title="닫기 — 메모는 남는다 (트레이 → 닫은 메모 에서 다시 연다)">×</button>
+  </div>
+  <div id="body" contenteditable="true" spellcheck="false"></div>
+  <div class="tools" id="tools">
+    <button class="btn" data-cmd="bold" title="굵게 (Ctrl+B)"><b>B</b></button>
+    <button class="btn" data-cmd="italic" title="기울임 (Ctrl+I)"><i>I</i></button>
+    <button class="btn" data-cmd="underline" title="밑줄 (Ctrl+U)"><u>U</u></button>
+    <button class="btn" data-cmd="strikeThrough" title="취소선 (Ctrl+T)"><s>S</s></button>
+    <button class="btn" data-cmd="insertUnorderedList" title="글머리표 (Ctrl+Shift+L)">•</button>
+  </div>
+
+<script>
+  const api = window.noteAPI;
+  const $ = (id) => document.getElementById(id);
+  const body = $('body');
+  let collapsed = false;
+
+  /**
+   * 서식은 이 태그들만 남긴다 (속성은 다 뗀다). notes.json 은 사람이 고칠 수도 있는 파일이라, 읽은 html 을 그대로 넣지 않는다.
+   * DOMParser 로 만든 문서는 스크립트를 돌리지 않는다.
+   */
+  const KEEP = new Set(['B', 'STRONG', 'I', 'EM', 'U', 'S', 'STRIKE', 'DEL', 'UL', 'OL', 'LI', 'DIV', 'P', 'BR']);
+  const DROP = new Set(['SCRIPT', 'STYLE', 'IFRAME', 'OBJECT', 'EMBED', 'LINK', 'META', 'TEMPLATE']);
+  function clean(html) {
+    const doc = new DOMParser().parseFromString('<!doctype html><body>' + html, 'text/html');
+    (function walk(node) {
+      for (const c of [...node.childNodes]) {
+        if (c.nodeType === Node.TEXT_NODE) continue;
+        if (c.nodeType !== Node.ELEMENT_NODE || DROP.has(c.tagName)) { c.remove(); continue; }
+        walk(c);
+        if (KEEP.has(c.tagName)) { for (const a of [...c.attributes]) c.removeAttribute(a.name); }
+        else c.replaceWith(...c.childNodes);
+      }
+    })(doc.body);
+    return doc.body.innerHTML;
+  }
+
+  const plain = () => body.innerText.replace(/ /g, ' ');
+  const firstLine = () => (plain().trim().split(/\r?\n/)[0] || '').slice(0, 30) || '메모';
+  const markEmpty = () => body.classList.toggle('empty', !plain().trim());
+  // 쓰는 대로 메인에 맡긴다 (저장 버튼이 없다). 메인이 글을 되돌려 넣는 일은 없다 — 한글 조합이 깨진다
+  function keep() {
+    markEmpty();
+    api.text({ text: plain(), html: clean(body.innerHTML) });
+  }
+  body.addEventListener('input', keep);
+  // 다른 데서 복사한 글은 서식을 떼고 글자만 붙인다 (글꼴 · 색 · 표가 딸려 오지 않게)
+  body.addEventListener('paste', (e) => {
+    e.preventDefault();
+    document.execCommand('insertText', false, e.clipboardData.getData('text/plain'));
+  });
+
+  // ── 서식 ──
+  const CMDS = ['bold', 'italic', 'underline', 'strikeThrough', 'insertUnorderedList'];
+  function showState() {
+    for (const b of document.querySelectorAll('#tools .btn')) {
+      let on = false;
+      try { on = document.queryCommandState(b.dataset.cmd); } catch { /* 그만 */ }
+      b.classList.toggle('on', on);
+    }
+  }
+  function fmt(cmd) {
+    body.focus();
+    document.execCommand(cmd, false, null);
+    showState();
+    keep();
+  }
+  for (const b of document.querySelectorAll('#tools .btn')) {
+    b.addEventListener('mousedown', (e) => e.preventDefault());      // 누를 때 본문의 선택이 풀리지 않게
+    b.addEventListener('click', () => fmt(b.dataset.cmd));
+  }
+  document.addEventListener('selectionchange', showState);
+  window.addEventListener('keydown', (e) => {
+    if (!e.ctrlKey || e.altKey) return;
+    const k = e.key.toLowerCase();
+    // 굵게 · 기울임 · 밑줄은 편집 칸이 원래 받는다. 취소선 · 글머리표만 따로 (윈도우 스티커 메모와 같은 키)
+    if (k === 't' && !e.shiftKey) { e.preventDefault(); fmt('strikeThrough'); }
+    else if (k === 'l' && e.shiftKey) { e.preventDefault(); fmt('insertUnorderedList'); }
+  });
+  window.addEventListener('focus', () => document.body.classList.add('active'));
+  window.addEventListener('blur', () => { document.body.classList.remove('active'); $('dots').classList.remove('on'); });
+
+  // ── 머리줄 ──
+  function setCollapsed(v) {
+    collapsed = v;
+    document.body.classList.toggle('collapsed', v);
+    $('title').textContent = v ? firstLine() : '';
+    $('fold').textContent = v ? '▾' : '‒';
+    $('fold').title = v ? '펼치기' : '접기';
+  }
+  function setColor(name, colors) {
+    document.documentElement.style.setProperty('--note', colors[name]);
+    document.querySelectorAll('.dot').forEach((d) => d.classList.toggle('cur', d.dataset.c === name));
+  }
+  $('add').onclick = () => api.add();
+  $('fold').onclick = () => { setCollapsed(!collapsed); api.collapse(collapsed); };
+  $('color').onclick = () => $('dots').classList.toggle('on');
+  $('close').onclick = () => api.close();
+  $('del').onclick = () => {
+    const b = $('del');
+    // 빈 메모는 묻지 않고 지운다
+    if (b.dataset.armed || !plain().trim()) { api.remove(); return; }
+    b.dataset.armed = '1';
+    b.textContent = '지울까?';
+    b.classList.add('armed');
+    setTimeout(() => { delete b.dataset.armed; b.textContent = '🗑'; b.classList.remove('armed'); }, 3000);
+  };
+
+  api.init().then((o) => {
+    if (!o) return;
+    // 서식 든 본문이 있으면 그걸, 없으면(밖에서 넣은 메모 · 옛 파일) 글자 그대로
+    if (o.html) body.innerHTML = clean(o.html); else body.textContent = o.text;
+    markEmpty();
+    for (const [name, hex] of Object.entries(o.colors)) {
+      const d = document.createElement('button');
+      d.className = 'dot';
+      d.dataset.c = name;
+      d.style.background = hex;
+      d.onclick = () => { setColor(name, o.colors); api.color(name); $('dots').classList.remove('on'); };
+      $('dots').appendChild(d);
+    }
+    setColor(o.color, o.colors);
+    setCollapsed(o.collapsed);
+    if (document.hasFocus()) document.body.classList.add('active');
+  });
+</script>
+</body>
+</html>

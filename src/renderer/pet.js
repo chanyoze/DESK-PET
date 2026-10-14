@@ -1853,8 +1853,6 @@
       claude.on({ kind: cmd.slice(7), project: 'test', sec: 42, busy: 0 });
     } else if (cmd.indexOf('notes:hidden:') === 0) {
       window.PetNotes.setHidden(cmd.slice(13) === '1');
-    } else if (cmd === 'notes:reload') {
-      window.PetNotes.setData(await window.petAPI.notesGet());   // 빠른 메모로 붙인 메모
     } else if (cmd === 'inbox') {
       inbox.open();
     } else if (cmd === 'recap') {

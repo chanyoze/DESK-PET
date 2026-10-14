@@ -17,6 +17,7 @@ const updater = require('./updater');
 const clipHistory = require('./clipboard-history');
 const shortcutsStore = require('./shortcuts-store');
 const palette = require('./palette-window');
+const noteWindows = require('./note-window');
 const settingsWindow = require('./settings-window');
 const makerWindow = require('./maker-window');
 const charPackage = require('./char-package');
@@ -316,6 +317,7 @@ function reloadPet(why) {
  */
 function buildTrayMenu() {
   const chars = listCharacters();
+  const closedNotes = noteWindows.closedList();
   return Menu.buildFromTemplate([
     // 놓친 알림 — 트레이에 빨간 점이 있을 때 여기서 바로 목록을 연다
     { label: inboxUnread ? '🔔 놓친 알림 ' + inboxUnread + '개 보기' : '최근 알림 보기', click: () => win?.webContents.send('pet:command', 'inbox') },
@@ -329,6 +331,15 @@ function buildTrayMenu() {
     { label: '지금 할 일 정리해줘', click: () => sendRecap('manual') },
     // 화면 공유 · 회의 때 — 캐릭터를 못 잡아도 여기서 숨길 수 있게
     { label: '메모 · 할 일 카드 숨기기', type: 'checkbox', checked: !!settings.load().notesHidden, click: (it) => setNotesHidden(it.checked) },
+    // 메모의 × 는 창만 닫는다 — 여기서 다시 연다
+    ...(closedNotes.length ? [{
+      label: '닫은 메모 (' + closedNotes.length + ')',
+      submenu: [
+        ...closedNotes.map((n) => ({ label: n.title, click: () => reopenNote(n.id) })),
+        { type: 'separator' },
+        { label: '모두 열기', click: () => reopenNote(null) },
+      ],
+    }] : []),
     { type: 'separator' },
     {
       label: '캐릭터',
@@ -1140,6 +1151,7 @@ if (!app.requestSingleInstanceLock()) {
     setInterval(() => checkUpdate(false), UPDATE_EVERY);
     refreshTodo();
     watchTodo();
+    noteWindows.init({ file: notesFile, hidden: () => !!settings.load().notesHidden, petDisplay: targetDisplay });
 
     // 해상도/작업표시줄이 바뀌면 창 크기와 바닥선을 다시 맞춘다
     const resync = () => {
@@ -1147,6 +1159,7 @@ if (!app.requestSingleInstanceLock()) {
       const { bounds } = targetDisplay();
       win.setBounds(bounds);
       win.webContents.send('pet:stage', getStage());
+      noteWindows.rescue();        // 빠진 모니터에 있던 메모를 데려온다
     };
     screen.on('display-metrics-changed', resync);
     screen.on('display-added', resync);
@@ -1277,45 +1290,32 @@ ipcMain.handle('todo:open', () => openTodoFile());
 ipcMain.handle('recap:now', () => sendRecap('manual'));
 
 // ── 스티커 메모 · 카드 ──────────────────────────────────────
-// 메모는 notes.json [{ id, text, color, x, y, collapsed }], 할 일 카드 자리 · 숨김은 설정(todoCard · notesHidden)
+// 메모는 한 장이 창 하나 (note-window.js · notes.json). 캐릭터 창에 그리는 건 할 일 카드뿐이다 —
+// 카드 자리 · 숨김은 설정(todoCard · notesHidden). 숨기기는 카드와 메모 창을 같이 숨긴다
 function notesState() {
   const cfg = settings.load();
-  return { notes: notesStore.loadNotes(notesFile()), todoCard: cfg.todoCard || {}, hidden: !!cfg.notesHidden };
+  return { todoCard: cfg.todoCard || {}, hidden: !!cfg.notesHidden };
 }
 function setNotesHidden(v) {
   settings.save({ notesHidden: !!v });
   win?.webContents.send('pet:command', 'notes:hidden:' + (v ? 1 : 0));
+  noteWindows.setHidden();
+}
+/** 닫은 메모 다시 열기 (id 없으면 전부) */
+function reopenNote(id) {
+  if (settings.load().notesHidden) setNotesHidden(false);
+  noteWindows.reopen(id);
+}
+/** 메모 한 장 붙이기 — 숨겨 둔 채 붙이면 안 보여서 헷갈리니 숨기기를 푼다 */
+function addNote(o) {
+  if (settings.load().notesHidden) setNotesHidden(false);
+  return noteWindows.add(o);
 }
 ipcMain.handle('notes:get', () => notesState());
-ipcMain.handle('notes:add', async (_e, pos) => {
-  const r = await openEditor({ mode: 'note', title: '메모', hint: '화면에 붙여 둘 메모. 색을 고를 수 있다.' });
-  if (r && r.text.trim()) {
-    const list = notesStore.loadNotes(notesFile());
-    list.push({ id: 'n' + Date.now().toString(36), text: r.text, color: r.color, x: pos && pos.x, y: pos && pos.y, collapsed: false });
-    notesStore.saveNotes(notesFile(), list);
-    if (settings.load().notesHidden) setNotesHidden(false);   // 숨겨 둔 채 새로 쓰면 안 보여서 헷갈린다
-  }
-  return notesState();
-});
-ipcMain.handle('notes:edit', async (_e, id) => {
-  const n = notesStore.loadNotes(notesFile()).find((x) => x.id === id);
-  if (!n) return notesState();
-  const r = await openEditor({ mode: 'note', title: '메모 편집', text: n.text, color: n.color, hint: '비우고 저장하면 그대로 둔다 (지우려면 카드의 ×).' });
-  if (r && r.text.trim()) {
-    const list = notesStore.loadNotes(notesFile()).map((x) => (x.id === id ? { ...x, text: r.text, color: r.color } : x));
-    notesStore.saveNotes(notesFile(), list);
-  }
-  return notesState();
-});
-ipcMain.handle('notes:update', (_e, id, patch) => {
-  const allowed = {};
-  for (const k of ['x', 'y', 'w', 'h', 'collapsed']) if (patch && k in patch) allowed[k] = patch[k];
-  const list = notesStore.loadNotes(notesFile()).map((x) => (x.id === id ? { ...x, ...allowed } : x));
-  notesStore.saveNotes(notesFile(), list);
-  return notesState();
-});
-ipcMain.handle('notes:remove', (_e, id) => {
-  notesStore.saveNotes(notesFile(), notesStore.loadNotes(notesFile()).filter((x) => x.id !== id));
+// 메뉴 "메모 붙이기…" — 빈 메모를 캐릭터 근처에 띄우고 바로 쓰게 한다. pos 는 캐릭터 창 안 좌표
+ipcMain.handle('notes:add', (_e, pos) => {
+  const b = targetDisplay().bounds;
+  addNote({ at: pos && pos.x != null ? { x: b.x + pos.x, y: b.y + pos.y } : null, focus: true });
   return notesState();
 });
 ipcMain.handle('notes:setTodoCard', (_e, patch) => {
@@ -1721,11 +1721,7 @@ ipcMain.handle('memo:save', (_e, m) => {
   const text = String((m && m.text) || '');
   if (!text.trim()) return { ok: false };
   if (m.target === 'note') {
-    const list = notesStore.loadNotes(notesFile());
-    list.push({ id: 'n' + Date.now().toString(36), text, color: 'yellow', x: null, y: null, collapsed: false });
-    notesStore.saveNotes(notesFile(), list);
-    if (settings.load().notesHidden) setNotesHidden(false);
-    win?.webContents.send('pet:command', 'notes:reload');
+    addNote({ text });
   } else {
     notesStore.add(todoFile(), m.target === 'backlog' ? { text, backlog: true } : { text, date: notesStore.ymd(new Date()) });
     refreshTodo();
@@ -1746,11 +1742,7 @@ function addFromOutside(kind, p) {
   if (!text) return { ok: false, error: 'text 가 비었어요' };
   if (kind === 'note') {
     const colors = ['yellow', 'pink', 'green', 'blue', 'gray'];
-    const list = notesStore.loadNotes(notesFile());
-    list.push({ id: 'n' + Date.now().toString(36), text: text.slice(0, 5000), color: colors.includes(p.color) ? p.color : 'yellow', x: null, y: null, collapsed: false });
-    notesStore.saveNotes(notesFile(), list);
-    if (settings.load().notesHidden) setNotesHidden(false);
-    win?.webContents.send('pet:command', 'notes:reload');
+    addNote({ text: text.slice(0, 5000), color: colors.includes(p.color) ? p.color : 'yellow' });
     win?.webContents.send('pet:say', { text: '메모 하나 받아서 붙여 뒀어', ms: 3000, quiet: true });
     console.log('[inbox] 메모 받음');
     return { ok: true, where: '스티커 메모' };
@@ -1937,4 +1929,4 @@ app.on('window-all-closed', () => app.quit());
 // GPU · 유틸리티 프로세스가 죽어도 로그에 남긴다 (클릭 먹통 추적용)
 app.on('child-process-gone', (_e, d) => console.error('[app] 하위 프로세스 종료:', d.type, d.reason, d.exitCode));
 
-app.on('will-quit', () => { try { globalShortcut.unregisterAll(); } catch { /* 그만 */ } clipHistory.stop(); flushMemoDraft(); });
+app.on('will-quit', () => { try { globalShortcut.unregisterAll(); } catch { /* 그만 */ } clipHistory.stop(); flushMemoDraft(); noteWindows.flush(); });

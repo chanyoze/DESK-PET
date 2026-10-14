@@ -1,26 +1,24 @@
 /**
- * 화면에 붙는 카드 — 할 일 카드 하나 + 스티커 메모 여러 장
+ * 화면에 붙는 카드 — 할 일 카드
  * -------------------------------------------------------------
+ * (스티커 메모는 여기서 빠졌다 — 한 장이 창 하나라 어느 모니터로든 가고 바로 쓸 수 있다. src/note-window.js)
  * 투명 창 위의 DOM 이다. 평소엔 클릭이 통과하므로, pet.js 의 히트 테스트가 카드 영역을
  * 알 수 있게 hit(x, y) 를 내놓는다 (카드 위에서만 마우스를 받는다).
  *
  *  - 머리줄을 끌어서 옮긴다 (놓으면 위치 저장)
- *  - ‒ 접기 / ✎ 편집 / × 닫기(할 일 카드) · 지우기(메모 — 두 번 눌러야 지운다)
- *  - 할 일 카드: 체크박스로 바로 체크, + 로 추가 (todo.md 에 쓴다)
- *  - 메모: 더블클릭하면 편집 창
+ *  - ‒ 접기 / × 닫기
+ *  - 체크박스로 바로 체크, + 로 추가 (todo.md 에 쓴다)
  * 글자 입력은 이 창에서 못 받아서(포커스 없는 창) 편집은 메인이 띄우는 입력 창에서 한다.
  */
 (function () {
   'use strict';
 
-  const NOTE_COLORS = { yellow: '#f6e58d', pink: '#f8b4c8', green: '#b8e6b0', blue: '#a9d2f5', gray: '#d5d8e0' };
   const TODO_SHOW = 12;      // 카드에 보여 줄 항목 수 (나머지는 스크롤)
 
   const api = () => window.petAPI;
   let layer = null;
   let stage = null;
   let hidden = false;
-  let notes = [];
   let todoCard = { x: null, y: null, collapsed: false, shown: true };
   let todo = { items: [] };
   let drag = null;
@@ -44,7 +42,6 @@
   }
 
   function setData(d) {
-    notes = d.notes || [];
     todoCard = { ...todoCard, ...(d.todoCard || {}) };
     hidden = !!d.hidden;
     render();
@@ -60,10 +57,9 @@
     render();
   }
 
-  /** 기본 자리 — 할 일 카드는 오른쪽 위, 메모는 그 왼쪽으로 줄지어 */
-  function defaultPos(kind, n) {
-    if (kind === 'todo') return { x: stage.workRight - 280, y: stage.workTop + 20 };
-    return { x: stage.workRight - 280 - 230 * (1 + (n % 4)), y: stage.workTop + 20 + 30 * Math.floor(n / 4) };
+  /** 기본 자리 — 오른쪽 위 */
+  function defaultPos() {
+    return { x: stage.workRight - 280, y: stage.workTop + 20 };
   }
 
   function place(el, x, y) {
@@ -296,37 +292,6 @@
   }
   const todoStr = todayStr;
 
-  function buildNote(n) {
-    const el = document.createElement('div');
-    el.className = 'card note-card' + (n.collapsed ? ' collapsed' : '');
-    el.style.setProperty('--note', NOTE_COLORS[n.color] || NOTE_COLORS.yellow);
-    const first = (n.text || '').split(/\r?\n/)[0].slice(0, 24) || '메모';
-    header(el, n.collapsed ? first : '', n.id, [
-      button('✎', '편집', () => api().notesEdit(n.id).then(setData)),
-      button(n.collapsed ? '▾' : '‒', n.collapsed ? '펼치기' : '접기', () => {
-        n.collapsed = !n.collapsed;
-        api().notesUpdate(n.id, { collapsed: n.collapsed });
-        render();
-      }),
-      button('×', '지우기 (한 번 더 누르면 지운다)', (b) => {
-        if (b.dataset.armed) { api().notesRemove(n.id).then(setData); return; }
-        b.dataset.armed = '1';
-        b.textContent = '지울까?';
-        b.classList.add('armed');
-        setTimeout(() => { if (b.isConnected) { delete b.dataset.armed; b.textContent = '×'; b.classList.remove('armed'); } }, 3000);
-      }),
-    ]);
-    if (!n.collapsed) {
-      const body = document.createElement('div');
-      body.className = 'card-body note-text';
-      body.textContent = n.text || '';
-      body.title = '더블클릭해서 편집';
-      body.addEventListener('dblclick', () => api().notesEdit(n.id).then(setData));
-      el.appendChild(body);
-    }
-    return el;
-  }
-
   function render() {
     if (!layer || !stage) return;
     if (drag) return;                 // 끄는 중엔 다시 그리지 않는다 (놓을 때 그린다)
@@ -334,18 +299,17 @@
     els.clear();
     layer.hidden = hidden;
     if (hidden) return;
-    const add = (id, el, pos, kind, idx) => {
+    const add = (id, el, pos) => {
       // 저장된 크기 (접혀 있으면 높이는 무시)
       if (pos.w) el.style.width = pos.w + 'px';
       if (pos.h && !el.classList.contains('collapsed')) { el.style.height = pos.h + 'px'; el.classList.add('sized'); }
       if (!el.classList.contains('collapsed')) addGrip(el, id);
       layer.appendChild(el);
-      const d = defaultPos(kind, idx);
+      const d = defaultPos();
       place(el, pos.x == null ? d.x : pos.x, pos.y == null ? d.y : pos.y);
       els.set(id, el);
     };
-    if (todoCard.shown !== false) add('todo', buildTodo(), todoCard, 'todo', 0);
-    notes.forEach((n, i) => add(n.id, buildNote(n), n, 'note', i));
+    if (todoCard.shown !== false) add('todo', buildTodo(), todoCard);
   }
 
   // ── 크기 조절 — 오른쪽 아래 모서리를 끈다 ──────────────────
@@ -388,14 +352,8 @@
     const pos = resize
       ? { w: el.offsetWidth, h: el.offsetHeight }
       : { x: Math.round(el._pos.x), y: Math.round(el._pos.y) };
-    if (id === 'todo') {
-      Object.assign(todoCard, pos);
-      api().notesSetTodoCard(pos);
-    } else {
-      const n = notes.find((x) => x.id === id);
-      if (n) Object.assign(n, pos);
-      api().notesUpdate(id, pos);
-    }
+    Object.assign(todoCard, pos);
+    api().notesSetTodoCard(pos);
   }
 
   /** 이 좌표에 카드가 있는지 (끄는 중이면 늘 true) */
@@ -409,9 +367,9 @@
     return false;
   }
 
-  /** 새 메모 기본 자리 (캐릭터 근처) */
+  /** 새 메모 창을 띄울 자리 (캐릭터 근처, 이 창 안 좌표 — 메인이 화면 좌표로 바꾼다) */
   function spotNear(x) {
-    return { x: clamp(x - 110, stage.workLeft + 10, stage.workRight - 230), y: clamp(stage.ground - 320, stage.workTop + 10, stage.ground - 200) };
+    return { x: clamp(x - 110, stage.workLeft + 10, stage.workRight - 250), y: clamp(stage.ground - 320, stage.workTop + 10, stage.ground - 200) };
   }
 
   window.PetNotes = { init, setStage, setData, setTodo, setHidden, hit, spotNear, addDefaults, get hidden() { return hidden; }, get todoShown() { return todoCard.shown !== false; } };
