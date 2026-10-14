@@ -133,17 +133,19 @@
   <div class="wrap">
     <h1>DeskPet</h1>
     <p class="tag">
-      바탕화면을 돌아다니는 데스크톱 마스코트.
+      바탕화면을 돌아다니는 데스크톱 마스코트 + 작업 도우미.
       작업 표시줄을 걸어다니고, 앉고, 자고, 가끔 말을 겁니다.
+      할 일 · 스티커 메모 · 알림도 챙겨 줍니다.
     </p>
 
     <div class="cta">
       <a class="btn" id="dl" href="https://github.com/chanyoze/DESK-PET/releases/latest">
         ⬇ 다운로드 (Windows)
       </a>
+      <a class="btn ghost" id="dl-mac" href="https://github.com/chanyoze/DESK-PET/releases">macOS</a>
       <a class="btn ghost" href="https://github.com/chanyoze/DESK-PET">GitHub</a>
     </div>
-    <p class="meta">v0.10.0 · 설치 필요 없음 · exe 하나 · Windows 10/11 64비트</p>
+    <p class="meta"><span id="ver"></span>설치 필요 없음 · exe 하나 · Windows 10/11 64비트 · macOS(애플 실리콘 · 인텔)</p>
 
     <div class="stage-wrap">
       <div class="stage" id="stage">
@@ -159,7 +161,7 @@
 <section>
   <div class="wrap">
     <h2>뭘 하나요</h2>
-    <p class="lead">가만히 두면 알아서 돌아다닙니다.</p>
+    <p class="lead">가만히 두면 알아서 돌아다니고, 필요할 땐 일을 거듭니다.</p>
     <div class="grid">
       <div class="card">
         <span class="emoji">🚶</span>
@@ -174,7 +176,27 @@
       <div class="card">
         <span class="emoji">🔔</span>
         <h3>알려줍니다</h3>
-        <p>빌드가 끝났거나 알림이 오면 말풍선으로 전달합니다. 리마인더도 걸 수 있습니다.</p>
+        <p>빌드가 끝났거나 알림이 오면 대화와 구분되는 알림 카드로 전달합니다. 놓친 알림은 배지로 남고, 리마인더도 걸 수 있습니다.</p>
+      </div>
+      <div class="card">
+        <span class="emoji">✅</span>
+        <h3>할 일을 챙깁니다</h3>
+        <p>마크다운 파일 하나로 관리하는 할 일 — 일자별 · 분류 · 반복 · 기한. 화면의 할 일 카드에서 바로 체크하고, 정각마다 남은 일을 캐릭터가 말해 줍니다.</p>
+      </div>
+      <div class="card">
+        <span class="emoji">🗒️</span>
+        <h3>스티커 메모</h3>
+        <p>메모 한 장이 작은 창 하나입니다. 어느 모니터로든 끌어다 놓고, 바로 쓰면 저절로 저장됩니다. 굵게 · 밑줄 같은 글자 서식, 색 다섯 가지, 닫아도 남는 메모.</p>
+      </div>
+      <div class="card">
+        <span class="emoji">⌨️</span>
+        <h3>단축키 도구</h3>
+        <p>어느 창에서든 단축키로 — 빠른 메모, 클립보드 기록, 자주 여는 폴더 · 주소 바로가기, Claude 에게 한 줄 물어보기.</p>
+      </div>
+      <div class="card">
+        <span class="emoji">🤖</span>
+        <h3>Claude Code 와 같이</h3>
+        <p>Claude Code 작업이 끝나거나 허락이 필요하면 캐릭터가 알려 주고, 알림을 누르면 그 터미널 창으로 갑니다. (Windows)</p>
       </div>
       <div class="card">
         <span class="emoji">🎯</span>
@@ -189,7 +211,7 @@
       <div class="card">
         <span class="emoji">🎨</span>
         <h3>캐릭터를 바꿉니다</h3>
-        <p>Spine 2D 스켈레톤이나 2D 스프라이트 시트(RPG Maker 등)를 넣으면 원하는 캐릭터로 바뀝니다. 크기도 조절됩니다.</p>
+        <p>내 그림(PNG · GIF)을 끌어다 놓으면 배경을 지워 캐릭터로 만들어 줍니다. Spine 2D 스켈레톤이나 스프라이트 시트도 넣을 수 있고, 만든 캐릭터는 파일로 주고받습니다.</p>
       </div>
       <div class="card">
         <span class="emoji">🖥️</span>
@@ -206,6 +228,11 @@
         <h3>가볍습니다</h3>
         <p>설치도 관리자 권한도 필요 없습니다. 끄고 싶으면 메뉴에서 종료 한 번.</p>
       </div>
+      <div class="card">
+        <span class="emoji">⬆️</span>
+        <h3>알아서 업데이트</h3>
+        <p>새 버전이 나오면 캐릭터가 알려 줍니다. 누르면 받아서 바꿔 끼우고 다시 켜집니다. 캐릭터 · 설정 · 할 일은 그대로 남습니다.</p>
+      </div>
     </div>
   </div>
 </section>
@@ -215,10 +242,12 @@
     <h2>조작</h2>
     <p class="lead">전부 캐릭터를 클릭하는 데서 시작합니다.</p>
     <table>
-      <tr><td>캐릭터 좌클릭</td><td>메뉴 — 캐릭터 · 함께 다니기 · 모니터 · 크기 · 동작 · 리마인더 · 종료</td></tr>
+      <tr><td>캐릭터 좌클릭</td><td>메뉴 — 동작 · 할 일 · 도구 · Claude 세션 · 캐릭터 · 리마인더 · 설정 · 숨기기 · 종료</td></tr>
       <tr><td>캐릭터 드래그</td><td>집어서 던지기</td></tr>
-      <tr><td>말풍선 클릭</td><td>넘기기</td></tr>
-      <tr><td>트레이 아이콘 우클릭</td><td>같은 메뉴</td></tr>
+      <tr><td>말풍선 클릭</td><td>넘기기 (알림 카드는 그 터미널로)</td></tr>
+      <tr><td>스티커 메모</td><td>머리줄을 끌어 옮기기(어느 모니터로든), 본문에 바로 쓰기, × 닫기 · 🗑 지우기</td></tr>
+      <tr><td>Ctrl+Alt+Space · V · O · Q</td><td>빠른 메모 · 클립보드 기록 · 바로가기 · Claude 에게 물어보기</td></tr>
+      <tr><td>트레이 아이콘</td><td>놓친 알림 · 도구 · 닫은 메모 · 캐릭터 · 설정 · 업데이트 확인 · 종료</td></tr>
     </table>
   </div>
 </section>
@@ -232,7 +261,12 @@
       <li>SmartScreen 경고가 뜨면 <strong>추가 정보 → 실행</strong>
         <br><span style="font-size:13.5px">코드 서명 인증서가 없어서 뜨는 경고입니다. 개인이 만든 앱이라 서명이 없습니다.</span>
       </li>
+      <li><strong>한 번 받으면 그다음부터는 앱이 새 버전을 알려 줍니다</strong></li>
     </ol>
+    <p style="color:var(--dim); font-size:14.5px">
+      <strong style="color:var(--fg)">macOS</strong> — Releases 의 <code>DeskPet-mac-x.y.z.zip</code>(<code>mac-v버전</code>)을 풀어 응용 프로그램 폴더로 옮긴 뒤,
+      터미널에서 한 번 <code>xattr -cr /Applications/DeskPet.app</code>. Claude Code 연동과 <code>deskpet.ps1</code> 은 아직 Windows 전용입니다.
+    </p>
   </div>
 </section>
 
@@ -240,8 +274,10 @@
   <div class="wrap">
     <h2>캐릭터 추가하기</h2>
     <p class="lead">
-      기본 캐릭터가 하나 들어 있습니다. <strong>Spine 2D 스켈레톤</strong>이나
-      <strong>2D 스프라이트 시트</strong>가 있으면 원하는 캐릭터를 넣을 수 있습니다.
+      기본 캐릭터가 하나 들어 있습니다. 가장 쉬운 방법은 <strong>내 그림으로 만들기</strong>입니다 —
+      설정 창 → 캐릭터에 PNG · GIF 를 끌어다 놓으면 배경을 지우고 좌우를 맞춰 캐릭터가 됩니다 (대기 그림 한 장만 있어도 됩니다).
+      만든 캐릭터는 <code>.deskpet</code> 파일로 내보내 주고받을 수 있습니다.
+      <strong>Spine 2D 스켈레톤</strong>이나 <strong>2D 스프라이트 시트</strong>가 있으면 직접 넣을 수도 있습니다.
     </p>
     <h3 style="margin:22px 0 8px">Spine</h3>
 
@@ -305,6 +341,9 @@ https://raw.githubusercontent.com/EsotericSoftware/spine-runtimes/3.8/spine-ts/b
     <p style="color:var(--dim); font-size:14.5px">
       <code>mood</code> 는 <code>normal</code> / <code>happy</code> / <code>alert</code> 이고,
       말풍선 색과 캐릭터 반응이 달라집니다.
+      같은 서버로 할 일 · 스티커 메모도 넣을 수 있고(<code>/todo</code> · <code>/note</code>), Windows 에서는 앱이 만들어 두는
+      <code>deskpet.ps1</code> 로 빌드가 끝났을 때 알리거나 할 일을 넣습니다.
+      자세한 건 <a href="https://github.com/chanyoze/DESK-PET#빌드--서버-알림-deskpetps1" style="color:var(--fg)">README</a>.
     </p>
   </div>
 </section>
@@ -323,6 +362,18 @@ https://raw.githubusercontent.com/EsotericSoftware/spine-runtimes/3.8/spine-ts/b
 </footer>
 
 <script src="character.js"></script>
+<script>
+// ── 지금 버전 — 릴리스에서 읽어 온다 (손으로 고치다 보면 옛 버전이 남는다). 못 읽으면 버전 없이 둔다 ──
+fetch('https://api.github.com/repos/chanyoze/DESK-PET/releases?per_page=20')
+  .then(function (r) { return r.ok ? r.json() : []; })
+  .then(function (list) {
+    var win = list.filter(function (x) { return /^v[0-9]/.test(x.tag_name) && !x.draft; })[0];
+    var mac = list.filter(function (x) { return /^mac-v[0-9]/.test(x.tag_name) && !x.draft; })[0];
+    if (win) document.getElementById('ver').textContent = win.tag_name + ' · ';
+    if (mac) document.getElementById('dl-mac').href = mac.html_url;
+  })
+  .catch(function () { /* 그만 */ });
+</script>
 <script>
 // ── 페이지 데모 ────────────────────────────────────────────────
 // 앱과 같은 파츠 리그(character.js)를 그대로 써서, 캐릭터가 실제로 걷는 걸 보여준다.
