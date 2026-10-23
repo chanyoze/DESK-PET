@@ -93,6 +93,7 @@ function start(port, onMessage, onClaude, onInbox) {
       const msg = { text: String(text).slice(0, 300), mood: mood || 'normal', ms: Number(ms) || 0 };
       const e = extra || {};
       if (e.source) msg.source = String(e.source).slice(0, 40);
+      if (e.title) msg.title = String(e.title).slice(0, 80);
       if (e.level) msg.level = String(e.level).slice(0, 20);
       if (e.project) msg.project = String(e.project).slice(0, 60);
       if (e.line) msg.line = String(e.line).slice(0, 200);
@@ -102,7 +103,7 @@ function start(port, onMessage, onClaude, onInbox) {
 
     if (req.method === 'GET') {
       const q = (k) => url.searchParams.get(k);
-      deliver(q('text'), q('mood'), q('ms'), { source: q('source'), level: q('level'), project: q('project'), line: q('line') });
+      deliver(q('text'), q('mood'), q('ms'), { source: q('source'), title: q('title'), level: q('level'), project: q('project'), line: q('line') });
       return;
     }
 

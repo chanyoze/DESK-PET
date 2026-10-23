@@ -10,6 +10,7 @@ const pmd = require('./pmd');
 const IS_WIN = process.platform === 'win32';
 const IS_MAC = process.platform === 'darwin';
 const claudeHooks = require('./claude-hooks');
+const geminiHooks = require('./gemini-hooks');
 const psScripts = require('./ps-scripts');
 const notesStore = require('./notes-store');
 const editorWindow = require('./editor-window');
@@ -193,15 +194,17 @@ function moveToDisplay(id) {
 function getStage() {
   const display = targetDisplay();
   const { bounds, workArea } = display;
+  const groundOffset = Number(settings.load().groundOffset) || 0;
   return {
     // 창은 모니터 전체를 덮으므로, 창 로컬 좌표 = 화면 좌표 - bounds 원점
     width: bounds.width,
     height: bounds.height,
-    // 작업 표시줄 윗변 = 캐릭터가 걸어다닐 바닥선
-    ground: workArea.y + workArea.height - bounds.y,
+    // 작업 표시줄 윗변 = 캐릭터가 걸어다닐 바닥선 (groundOffset: +면 위로, -면 아래로)
+    ground: (workArea.y + workArea.height - bounds.y) - groundOffset,
     workTop: workArea.y - bounds.y,
     workLeft: workArea.x - bounds.x,
     workRight: workArea.x + workArea.width - bounds.x,
+    groundOffset,
   };
 }
 
@@ -1110,6 +1113,16 @@ if (!app.requestSingleInstanceLock()) {
 
     // 이미 연결돼 있으면 이 버전에 맞춰 다시 건다 — 스크립트 내용 · 포트 · 거는 이벤트가 바뀌었을 수 있다.
     // install 은 우리 훅만 걷어내고 다시 넣으므로 몇 번을 불러도 같다.
+    try {
+      const gSt = geminiHooks.status();
+      if (gSt.connected) {
+        geminiHooks.install({ port: cfg.notifyPort });
+        console.log('[gemini] 훅: 연결됨');
+      }
+    } catch (e) {
+      console.error('[gemini] 훅 갱신 실패:', e.message);
+    }
+
     if (IS_WIN && fs.existsSync(claudeHookScript())) {
       try {
         let st = claudeHooks.status({ scriptPath: claudeHookScript() });
@@ -1199,6 +1212,20 @@ ipcMain.handle('reminders:remove', (_e, id) => {
   return list;
 });
 ipcMain.handle('settings:setChat', (_e, v) => settings.save({ chatter: !!v }));
+
+// ── Gemini CLI (agy) 연결 ────────────────────────────────────
+ipcMain.handle('gemini:status', () => geminiStatus());
+ipcMain.handle('gemini:connect', () => {
+  geminiHooks.install({ port: settings.load().notifyPort });
+  return geminiStatus();
+});
+ipcMain.handle('gemini:disconnect', () => {
+  geminiHooks.uninstall();
+  return geminiStatus();
+});
+function geminiStatus() {
+  return geminiHooks.status();
+}
 
 // ── Claude Code 연결 · 자동 시작 ─────────────────────────────
 ipcMain.handle('claude:status', () => claudeStatus());
@@ -1345,7 +1372,7 @@ ipcMain.handle('update:check', () => checkUpdate(true));
  */
 const FPS_PRESETS = ['light', 'normal', 'smooth'];
 const PREF_KEYS = ['sizeScale', 'tone', 'chatter', 'cursorMode', 'display', 'recap', 'toastOn', 'speakOnClaude',
-  'clipPaused', 'hotkeys', 'fps', 'gpu', 'updateCheck', 'askModel'];
+  'clipPaused', 'hotkeys', 'fps', 'gpu', 'updateCheck', 'askModel', 'groundOffset'];
 
 function prefsState() {
   const cfg = settings.load();
@@ -1361,6 +1388,7 @@ function prefsState() {
     recap: recapCfg(),
     toast: cfg.toastOn !== false,
     claude: claudeStatus(),
+    gemini: geminiStatus(),
     hotkeys: hotkeys(),
     hotkeyDefaults: HOTKEYS_DEFAULT,
     hotkeyFailed: hotkeyFailed,
@@ -1371,6 +1399,7 @@ function prefsState() {
     autoStart: autoStartStatus(),
     updateCheck: cfg.updateCheck !== false,
     askModel: ['sonnet', 'haiku'].includes(cfg.askModel) ? cfg.askModel : '',
+    groundOffset: Number(cfg.groundOffset) || 0,
     paths: { userData: app.getPath('userData') },
   };
 }
@@ -1428,6 +1457,13 @@ ipcMain.handle('prefs:set', (_e, key, value) => {
     case 'updateCheck': settings.save({ updateCheck: !!value }); break;
     case 'askModel': settings.save({ askModel: ['sonnet', 'haiku'].includes(value) ? value : '' }); break;
     case 'autoStart': if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: !!value, path: loginExe() }); break;
+    case 'groundOffset': {
+      const v = Math.round(Number(value)) || 0;
+      const clamped = Math.max(-150, Math.min(200, v));
+      settings.save({ groundOffset: clamped });
+      win?.webContents.send('pet:stage', getStage());
+      break;
+    }
     case 'hotkey': {
       const tab = value && value.tab;
       if (!(tab in HOTKEYS_DEFAULT)) break;
@@ -1451,6 +1487,12 @@ ipcMain.handle('prefs:action', async (_e, name) => {
   else if (name === 'todo') openTodoFile();
   else if (name === 'claude-on') claudeConnect();
   else if (name === 'claude-off') claudeDisconnect();
+  else if (name === 'gemini-on') {
+    geminiHooks.install({ port: settings.load().notifyPort });
+  }
+  else if (name === 'gemini-off') {
+    geminiHooks.uninstall();
+  }
   else if (name === 'hk-pause') globalShortcut.unregisterAll();     // 단축키를 새로 누르는 동안은 지금 것이 가로채지 않게
   else if (name === 'hk-resume') registerHotkeys(true);
   return { ...prefsState(), update: updateInfo ? updateInfo.version : null };

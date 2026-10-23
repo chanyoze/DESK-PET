@@ -186,6 +186,32 @@
       nameIn.addEventListener('change', () => { try { localStorage.setItem('shareName', nameIn.value.trim()); } catch { /* 저장 못 해도 그만 */ } });
       add(row('보내는 사람', nameIn, el('span', { class: 'note' }, '내보낼 때 같이 넣어요 · .deskpet 파일은 이 창에 끌어다 놓아도 돼요')));
       add(row('크기', seg(st.sizes.map((s) => [s.value, s.label]), st.size, (v) => set('size', v, '크기를 바꿨어요 — 캐릭터가 다시 떠요'))));
+
+      const curOff = Number(st.groundOffset) || 0;
+      const offLabel = (v) => (v === 0 ? '기본 (0px)' : (v > 0 ? '+' + v + 'px (위)' : v + 'px (아래)'));
+      const lbl = el('span', { style: 'font-family:Consolas,monospace;font-size:12px;min-width:75px;display:inline-block;color:#c3cce0' }, offLabel(curOff));
+      const slider = el('input', {
+        type: 'range',
+        min: -80,
+        max: 120,
+        step: 5,
+        value: curOff,
+        style: 'accent-color:#3b5bdb;cursor:pointer;vertical-align:middle;width:130px',
+      });
+      let sliderTimer = null;
+      slider.addEventListener('input', () => {
+        const val = Number(slider.value);
+        lbl.textContent = offLabel(val);
+        clearTimeout(sliderTimer);
+        sliderTimer = setTimeout(() => { api.set('groundOffset', val); }, 30);
+      });
+      slider.addEventListener('change', () => {
+        const val = Number(slider.value);
+        clearTimeout(sliderTimer);
+        set('groundOffset', val);
+      });
+      const resetBtn = curOff !== 0 ? el('button', { class: 'btn', style: 'padding:2px 7px;font-size:11.5px', onclick: () => set('groundOffset', 0) }, '기본값') : null;
+      add(row('바닥 높낮이', slider, lbl, resetBtn, el('span', { class: 'note' }, '작업표시줄 쪽으로 내리거나 위로 띄워요')));
       if (st.displays.length > 1) {
         const sel = el('select', { onchange: (e) => set('display', Number(e.target.value), '모니터를 옮겼어요') },
           st.displays.map((d) => { const o = el('option', { value: d.id }, d.label); o.selected = d.current; return o; }));
@@ -221,6 +247,15 @@
             : el('button', { class: 'btn', onclick: async () => { st = await api.action('claude-on'); render(); toast(st.claude.connected ? '연결했어요' : '연결 못 했어요'); } }, c.legacy ? '연결하기 (예전 훅 바꾸기)' : '연결하기'),
           el('span', { class: 'note' }, '끝남 · 허락 요청 알림')));
         if (c.connected) add(row('Claude 소식 말하기', toggle(c.speak, (v) => set('speak', v))));
+      }
+      if (st.gemini) {
+        const g = st.gemini;
+        add(row('Gemini CLI (agy)',
+          el('span', { class: 'badge' + (g.connected ? ' ok' : '') }, g.connected ? '연결됨' : '연결 안 됨'),
+          g.connected
+            ? el('button', { class: 'btn danger', onclick: async () => { st = await api.action('gemini-off'); render(); toast('연결을 끊었어요'); } }, '연결 끊기')
+            : el('button', { class: 'btn', onclick: async () => { st = await api.action('gemini-on'); render(); toast(st.gemini && st.gemini.connected ? '연결했어요' : '연결 완료'); } }, '연결하기'),
+          el('span', { class: 'note' }, '세션 작업 완료 알림')));
       }
 
       // 도구

@@ -823,10 +823,10 @@
         const dozing = p.S.state === 'sleep';
         const kind = dozing ? 'sleepy' : ev.sec >= 300 ? 'long' : 'done';
         const line = this.line(p, kind, { m: Math.round(ev.sec / 60) });
-        msg = { text: line, mood: 'happy', ms: 9000, sid, card: card('done', '작업 끝남' + dur, line) };   // 자고 있었으면 깨면서 반응한다
+        msg = { text: line, mood: 'happy', ms: 9000, sid, card: card('done', '클로드 완료' + dur, line) };   // 자고 있었으면 깨면서 반응한다
       } else if (ev.kind === 'fail') {
         const line = this.line(p, 'fail');
-        msg = { text: line, mood: 'fail', ms: 12000, sid, card: card('fail', '오류로 멈춤', line) };
+        msg = { text: line, mood: 'fail', ms: 12000, sid, card: card('fail', '클로드 오류로 멈춤', line) };
       } else if (ev.kind === 'permission') {
         const line = this.line(p, 'permission');
         msg = { text: line, mood: 'alert', ms: 12000, quiet: true, sid, card: card('permission', '허락 필요', line) };
@@ -1690,12 +1690,19 @@
   //  부팅
   // ════════════════════════════════════════════════════════════
   function applyStage(s) {
+    const oldGround = stage ? stage.ground : s.ground;
+    const wasGrounded = pets.map((p) => p.S && p.S.y >= oldGround - 2 && Math.abs(p.S.vy) < 1);
     stage = s;
     window.PetNotes.setStage(s);
-    for (const p of pets) {
+    pets.forEach((p, i) => {
       p.S.x = clamp(p.S.x, s.workLeft + 60, s.workRight - 60);
-      p.S.y = Math.min(p.S.y, s.ground);
-    }
+      if (wasGrounded[i]) {
+        p.S.y = s.ground;
+        p.S.vy = 0;
+      } else {
+        p.S.y = Math.min(p.S.y, s.ground);
+      }
+    });
   }
 
   async function boot() {

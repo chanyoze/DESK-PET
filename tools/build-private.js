@@ -51,7 +51,7 @@ const preset = {
   modes: cur.modes || {},
 };
 // 설정 창에서 고른 취향도 그대로 (PC 마다 다른 것 — 모니터 · 자동 시작 · 할 일 · 메모 위치 — 은 빼고)
-for (const k of ['cursorMode', 'chatter', 'fps', 'gpu', 'recap', 'toastOn', 'speakOnClaude', 'hotkeys', 'todoCategories', 'clipPaused', 'updateCheck']) {
+for (const k of ['cursorMode', 'chatter', 'fps', 'gpu', 'recap', 'toastOn', 'speakOnClaude', 'hotkeys', 'todoCategories', 'clipPaused', 'updateCheck', 'groundOffset']) {
   if (cur[k] !== undefined) preset[k] = cur[k];
 }
 if (preset.companion === preset.character) preset.companion = null;

@@ -18,6 +18,7 @@ const DEFAULTS = {
   notifyPort: 45678,
   speakOnClaude: true,
   cursorMode: 'none',  // 커서 놀이: none / chase 쫓아오기 / flee 도망가기
+  groundOffset: 0,     // 바닥 높낮이: px (+면 위로, -면 아래로)
 };
 
 /**
